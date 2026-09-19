@@ -2373,3 +2373,52 @@
    heEntrySize 交叉校验 + 调用者会话核对。
 5. verify WIN32K 段 lambda 位置索引提取脆弱（已三次翻车）——
    具名解构韧性修复待办。
+
+## 2026-09-19 — R3-10b-iii 前置：内核记录布局经加速表实证 + 定时器路线探测（test2 1903，KDNET 轮 7）
+
+### 现象
+- 组合探针（build/probe_w32calib.py：3 加速表 + 5 定时器（id
+  0x4141-0x4545，句柄 0x7fd3-0x7fd7）+ 存活 600s）落地后 KDNET dump。
+- 首轮 dump 时探针已超时退出——加速表槽位仍有 type/gen 匹配的残留
+  记录（证实布局），但 gTimerHashTable 全空（定时器随进程销毁）；
+  次轮探针存活期内 dump，哈希表 16 桶仍全自指（空）。
+
+### 与参考的对比
+- **内核句柄表记录布局 = 用户副本完全一致**：加速表三槽
+  （0x10d/0x14f/0x14b，与句柄低 16 位精确对应）在内核表
+  （aheList=ffff8525`c0c00000）的记录 @24 = 0x0008
+  （TYPE_ACCELTABLE）、@26 = 代际（0x3e/0x25/0x3e 与句柄高 16 位
+  精确对应）。同一 32B 步长、同一 type/gen 偏移。
+- 内核记录 @0/@8 = 0 或小偏移（0x9fc0/0xe60 等，desktop-heap 语义）
+  ——内核对象指针不在记录内（与用户副本同为掩码/偏移形态），
+  "pHead 补齐"需要 desktop-heap 基址推导（W32PROCESS 链，另切片）。
+
+### 修复尝试 / 发现
+- 定时器注册点未定位：gTimerHashTable（win32kbase+0x215de0）16 桶
+  全空、gptmrMaster.Flink 在两轮间变化（f20f81d0 → f20f7af0，说明
+  主链活跃但其 @0 是 DISPATCHER 头不是 LIST_ENTRY，节点遍历模型
+  需重设计）。候选：定时器挂线程/桌面级列表，或 gTimerHashTable
+  非本会话实例。需"存活定时器 + 正确会话上下文"的专用差分轮。
+- guest 探针投递的 marker 文件权限坑：cmd 重定向预先创建的目标
+  文件 ACL 与后续 python 写冲突（PermissionError）——探针一律
+  print + 外层重定向捕获（python -u），不自己写文件。
+
+### 关键决策回顾
+- 内核表可走查性确认：驱动用与用户副本相同的解码器（type@24/
+  gen@26、存活=type∈1..0x40）即可走查内核表——R3-10b-ii 的
+  解析器+0x772 扩展无需改动即可覆盖。
+- "pHead 补齐"降级为远期：内核指针需 desktop-heap 基址推导
+  （EPROCESS→W32PROCESS→...），独立切片。
+- 校准节奏：探针存活窗口（600s）与 KDNET 会话建立耗时要匹配，
+  先探针后 kd，符号已缓存时会话建立 <2 分钟。
+
+### 结果
+- 内核记录布局实证落袋；定时器枚举与 pHead 补齐保留在
+  R3-10b-iii/iv 队列。R3-10b-ii 已收官态（双机绿）未被改动。
+
+### TODO
+1. 22631 gSharedInfo RVA 标定（Win11 KDNET 一轮）→ profile 行。
+2. 定时器注册点定位：存活定时器 + 逐会话上下文 dq
+   gTimerHashTable/gptmrMaster 链差分。
+3. pHead 补齐：desktop-heap 基址推导（W32PROCESS 链）。
+4. WinEvent 钩子（DESKTOPINFO 链）。
