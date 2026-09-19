@@ -2599,3 +2599,12 @@
 3. 驱动实现：PsGetProcessWin32Process/PsGetThreadWin32Thread（运行
    时 MmGetSystemRoutineAddress）+ 每行 KernelObject = base + rec@0。
 4. verify：0x772 内核行 kobj 非零且落在堆区间断言。
+
+### 追记（16f 轮）：W32THREAD 直猜失败
+- explorer 首线程 KTHREAD.Win32Thread = ffffb28d`64804250（内核池，
+  与 EPROCESS 同区）；THREADINFO+0x0 = ffffafd1`4584e830（会话池）。
+  以 pDeskInfo-0x30/0x20/0x10/0x0 四假设验证全部 0/4——桌面堆基址
+  不在 THREADINFO 头部直接可达。
+- 结论：需要先系统化差分 THREADINFO/DESKTOP 布局（找 pDeskInfo/
+  pDesktop 字段），再推堆基址。kd 轮 16a-16f 的 dump 数据已在
+  build/kd_heap_calib16*_out.txt 留存，供下一轮离线分析。
