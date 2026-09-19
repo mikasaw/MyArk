@@ -9,7 +9,7 @@
 
 ## 当前完成基线（截至 2026-09-15）
 
-31 模块 / 42 协议头定义 118 个 IOCTL（注册分发面约 96）/ 147 项虚机断言。进程与线程全套（枚举/终止/挂起/PPL/完整性/可见性/DKOM/注入 DLL/CrossView/详情）、物理与虚拟内存读写+扫描、句柄/ALPC/Section、SSDT 枚举、回调枚举注销、WFP、win32k/键盘探针、存储/设备五件套、安全姿态三条、WSL/HWID 基座/调试输出/BugCheck 诊断/Safety 门/Preflight、R3 file 五命令、history 加密、DPI 缩放。
+31 模块 / 42 协议头定义 119 个 IOCTL（注册分发面约 97）/ 152 项虚机断言。进程与线程全套（枚举/终止/挂起/PPL/完整性/可见性/DKOM/注入 DLL/CrossView/详情）、物理与虚拟内存读写+扫描、句柄/ALPC/Section、SSDT 枚举、回调枚举注销、WFP、win32k/键盘探针、存储/设备五件套、安全姿态三条、WSL/HWID 基座/调试输出/BugCheck 诊断/Safety 门/Preflight、R3 file 五命令、history 加密、DPI 缩放。
 
 ---
 
@@ -112,7 +112,7 @@
 | R3-7 | Minifilter 清单 + 旁路 PID ✅（2026-09-17） | 0x818 FltEnumerateFilters+ASI 清单（11 项实测含自身 altitude）；0x819 采样器旁路 PID（token 门控，ADD/REMOVE/CLEAR/QUERY + BypassDrops 计数）；双 build 全绿 | 1.5 天 |
 | R3-8 | mutation 事务化 ✅（2026-09-17） | 0x732 PREPARE / 0x733 COMMIT / 0x734 ROLLBACK / 0x735 TX_LIST：Flags2 mask-and-set 事务化 + 32 项审计环；PPL 字节写就绪；verify MUTTX 6 断言双 build 全绿 | 2 天 |
 | R3-9 | ObCallbacks STRIP_ACCESS 反杀 ✅（2026-09-17） | 0x723 SET / 0x724 STATUS：ObRegisterCallbacks(PsProcessType) 预操作剥 0x087B 七位危险权限（TERMINATE/CREATE_THREAD/VM_*/DUP/SUSPEND），KernelHandle 豁免，token 门控 ADD/REMOVE/CLEAR + 计数器；verify OBPROTECT 6 断言 + MATRIX 两行，双 build 全绿；修复 WFP 0x720 撞号 P0 | 2 天 |
-| R3-10 | win32k 补全（定时器/事件钩子/窗口详情） | 按需 | 2 天 |
+| R3-10a | win32k 用户对象句柄表（R3-10 第一刀）✅（2026-09-19） | 0x772：user32!gSharedInfo 句柄表走查（PEB→Ldr→EAT，Tier B 零内核偏移），布局双机标定 HeEntrySize=32/type@24/gen@26/pHead 用户副本抹零；存活=type∈1..0x40；加速表差分探针往返精确命中（1903 [371,373,375] / 22631 [1041,1119,1409]）；client win32k handles；verify WIN32K 5 断言双绿；定时器/WinEvent 留 R3-10b | 1 天 |
 | R3-11 | CE 内存编辑集成（可选，依赖 R0 读写已有面） | CE 插件桥 → 驱动读写 IOCTL | 3 天 |
 | R3-12 | modules/* UI 自建 Treeview 接入 scaling.py（B3 残留）✅（2026-09-16） | 8 模块 9 个自建 Treeview 10 处列宽调用点全部改 scaled_width（network width=0 自动重置除外）；新增 2 个源码级守护单测；client 全套 865 passed | 0.5 天 |
 | R3-13 | ReadDwell 系迁移 MmCopyMemory（B4 残留）✅（2026-09-16） | `MyArkKernelReadDwellBytes` 与 `MyArkDynDataReadDwell` 改 MmCopyMemory(MM_COPY_MEMORY_VIRTUAL)，返回实际拷贝字节数（顺带修复 return 8 脏契约与慢路径 MAX 失真）；双 build 全绿；全仓其余 25+ 处 MmIsAddressValid 门控裸读为候选后续加固项 | 0.5 天 |
