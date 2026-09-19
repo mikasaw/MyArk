@@ -2384,6 +2384,21 @@
 - 顺带标定（Win11）：gTimerHashTable RVA=0x288320、gTimerId
   RVA=0x288720（供 R3-10b-iii 定时器路线用）。
 
+### TODO 补充（轮 9，同日）
+- 窗口定时器探针 v2（probe_w32timer2.py：RegisterClass→CreateWindow→
+  SetTimer(hwnd, 0x4141..)，配合 DefWindowProcW argtypes 修正）——
+  **gTimerHashTable 出现非空桶**（桶 0/2/3 → 节点 ffff8525`c061bf20 /
+  c061bb60 / c061bc00，session-1 池 tag "Usmt" 可见）。窗口定时器
+  （SetTimer(hwnd,…)）确认进哈希表；NULL-hwnd 线程定时器路线
+  （v1 探针）哈希表为空。
+- 节点 128B 原始 dump 已留存（本日志 + calib9_out.txt 本地）：
+  @0x00 LIST_ENTRY（Flink/Blink 指回桶头=单元素链）、@0x10 计数
+  0xaa1cd4、@0x24 池 tag、@0x30 内核指针（疑似 PTHREADINFO）、
+  @0x40 用户指针 0x7ff8950572c0（疑似 timer proc 回调）、@0x48
+  0x493e0（疑似周期相关）。nID 0x4141 未在前 0x80 字节出现——
+  下轮 L20 深 dump 全部非空桶节点 + 以 0x4141 离线定位 nID 偏移。
+- 附加数据点：本轮 accel 槽（0xc5/0x9b/0x15d）内核记录同前布局。
+
 ## 2026-09-19 — R3-10b-iii 前置：内核记录布局经加速表实证 + 定时器路线探测（test2 1903，KDNET 轮 7）
 
 ### 现象
