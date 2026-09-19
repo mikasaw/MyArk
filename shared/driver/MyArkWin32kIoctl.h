@@ -132,13 +132,18 @@ typedef struct _MYARK_WIN32K_USER_HANDLES_OUTPUT {
     UINT64  KernelAheList;                       // KERNEL handle table (real pHead; 0 = unresolved)
     UINT64  KernelPsi;                           // kernel SERVERINFO pointer
     UINT32  PsiMatch;                            // bit0 = kernel psi == user copy psi;
-                                                 // bit1 = desktop-heap base derived
-                                                 // (rows' KernelObject self-checked)
+                                                 // bit1 = desktop-heap base derived AND
+                                                 // >=1 row self-validated against it
+                                                 // (W32P candidate scan, rows hdr-checked)
     UINT32  Reserved2;                           // DIAG breadcrumb: resolver
                                                  // stage 1..6, or 0x100|hstage
                                                  // for heap-derivation failure
                                                  // (0x11 no W32PROCESS,
-                                                 // 0x12 bad desc, 0x13 bad base)
+                                                 // 0x12 no structural candidate,
+                                                 // 0x13 candidates but 0 rows
+                                                 // validated, 0x14 scan aborted);
+                                                 // 0x0 when heap scan is gated
+                                                 // off for this build
     MYARK_WIN32K_USER_HANDLE_ENTRY Entries[MYARK_WIN32K_HANDLE_CAP];
 } MYARK_WIN32K_USER_HANDLES_OUTPUT, *PMYARK_WIN32K_USER_HANDLES_OUTPUT;
 

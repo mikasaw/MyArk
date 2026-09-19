@@ -3384,6 +3384,73 @@ def verify_win32k_handles(handle) -> None:
     check("WIN32K", "0x772 probe: created accelerators visible as new slots",
           probe_ok, detail)
 
+    # P3-4: when the heap base derivation reports success (PsiMatch bit1),
+    # a caller-created DESKTOP-HEAP object row MUST carry a canonical
+    # kernel object whose low dword is its own handle. The probe object is
+    # a message window: KDNET round 19b showed accel tables are NOT
+    # desktop-heap residents (kernel ahe record koff=0 for type 8), so
+    # their KernelObject stays 0 by design and can never serve here.
+    ok_window = False
+    if ok_created and probe_ok:
+        k32v = ctypes.WinDLL("kernel32")
+        k32v.GetModuleHandleW.restype = ctypes.c_void_p
+        user32.DefWindowProcA.restype = ctypes.c_void_p
+
+        class _WNDCLASSA(ctypes.Structure):
+            _fields_ = [("style", ctypes.c_uint),
+                        ("lpfnWndProc", ctypes.c_void_p),
+                        ("cbClsExtra", ctypes.c_int),
+                        ("cbWndExtra", ctypes.c_int),
+                        ("hInstance", ctypes.c_void_p),
+                        ("hIcon", ctypes.c_void_p),
+                        ("hCursor", ctypes.c_void_p),
+                        ("hbrBackground", ctypes.c_void_p),
+                        ("lpszMenuName", ctypes.c_void_p),
+                        ("lpszClassName", ctypes.c_char_p)]
+
+        wc = _WNDCLASSA()
+        wc.lpfnWndProc = ctypes.cast(user32.DefWindowProcA,
+                                     ctypes.c_void_p).value
+        wc.hInstance = k32v.GetModuleHandleW(None)
+        wc.lpszClassName = b"MyArkVerifyWnd"
+        atom = user32.RegisterClassA(ctypes.byref(wc))
+        user32.CreateWindowExA.restype = ctypes.c_void_p
+        # HWND_MESSAGE parent = message-only window, no desktop impact
+        pwnd = user32.CreateWindowExA(
+            0, b"MyArkVerifyWnd", b"x", 0, 0, 0, 0, 0,
+            ctypes.c_void_p(0xFFFFFFFFFFFFFFFD), None,
+            ctypes.c_void_p(wc.hInstance), None)
+        pwnd = pwnd or 0
+        ok_window = bool(atom) and bool(pwnd)
+        check("WIN32K", "P3-4 probe window created", ok_window,
+              "atom=%s hwnd=%s" % (hex(atom or 0), hex(pwnd)))
+
+    if ok_window:
+        try:
+            res_w = _win32k_enum_handles(handle)
+            pmatch_w = res_w[10]
+            by_idx_w = {r[0]: r for r in res_w[12]}
+            row = by_idx_w.get(pwnd & 0xFFFF)
+            # A non-zero KernelObject IS the proof: the driver filled it
+            # only after the object's own handle self-check passed at
+            # base+koff. The R3 side asserts the address is canonical
+            # kernel space; it cannot (and need not) re-read the object.
+            canon_ok = bool(row) and row[3] > 0xFFFF800000000000
+            if pmatch_w & 2:
+                check("WIN32K",
+                      "0x772 caller window row canonical when heap-derived (P3-4)",
+                      canon_ok,
+                      "heap-derived: hwnd=0x%X idx=0x%X kobj=%s"
+                      % (pwnd & 0xFFFFFFFF, pwnd & 0xFFFF,
+                         hex(row[3]) if row else "row-missing"))
+            else:
+                check("WIN32K",
+                      "0x772 caller window row canonical when heap-derived (P3-4)",
+                      True, "heap base not derived this run "
+                      "(bit1=0, rsv2=0x%X) -- informational" % res_w[11])
+        finally:
+            user32.DestroyWindow(pwnd)
+
     if ok_created:
         for h in probe_handles:
             user32.DestroyAcceleratorTable(h)

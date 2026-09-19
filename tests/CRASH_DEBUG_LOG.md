@@ -2651,3 +2651,76 @@
 - **kd 运维坑**：`x win32kbase!gSharedInfo` 的 re.match 会因多行
   响应首行为 Command 回显而失配——必须逐行匹配；lm 输出会间歇
   截断（改 x 拿符号地址）。
+
+---
+
+## 2026-09-20 — R3-10b-iv 第二步：W32P 候选扫描替换 0x7f8 单链 + 0x50 蓝屏根治（test2 / 1903 + win11 / 22631）
+
+### 现象
+1. 新扫描版驱动 `sc start` 后 ~30s 内 guest 蓝屏 **0x50
+   PAGE_FAULT_IN_NONPAGED_AREA**（`MyArkCore!memcpy+0x26`，读
+   0xffffade6aacd0000），自动重启；sc create 写入的服务注册表键因
+   崩溃未刷盘而**丢失**（重启后 1060）。
+2. reader 修复后套件完整跑通：s0 调用者 `psi_match=2`（bit1 置位）、
+   **110~112 行 canonical kobj**（session 0 首次），但
+   P3-4 断言 `0/3`（accel 探针行无 kobj）。
+3. 舰队通道两处静默失效叠加：vmrun 大文件拉取（30KB+）失败、
+   vmrun exec 间歇静默 no-op——拉回的"成功"实为上一轮旧件
+   （vmrun 保留 guest mtime，时间戳也不可信）。
+
+### 与参考的对比
+- kd 18/18b/18c/19/19b 实测（同 boot 三角定位 + ahe 行抽查裁决）：
+  旧 `W32P+0x7f8/-0x28` 单链在 explorer 上指到 **Winlogon 桌面堆**
+  （0xfc0000，30 行抽查 3/30——恰为 csrss 在 Winlogon 桌面的窗口数）；
+  真正的 Default 堆在 `W32P+0x150` 指向的内核桌面对象里
+  （`{base@+0x10, base+limit@+0x18}`，22/30 命中）。
+- 该对象 +0x10/+0x18 结构在 s0 probe（服务桌面）同样成立
+  （base=0x1200000 与三窗口三角定位值一致），且 W32P 内**偏移不跨
+  boot 稳定**（0x150↔0x160 漂移）→ 固定偏移链不可靠，必须扫描。
+- `__try/__except` 只能救**用户地址**缺页；内核 VA 无法解析时直接
+  0x50，异常处理器根本不执行——旧 reader 对内核地址零防护，旧代码
+  只是解引用面小（≤2 个已知有效指针）而侥幸。项目其他模块
+  （dyndata/callback）早已用 `MmIsAddressValid` 前置门（KNOWN_ISSUES
+  B4 残余），win32k 模块是唯一裸 `__try` 的。
+- P3-4 断言对象选错：**accel 表不是桌面堆驻留对象**——kernel ahe
+  记录 koff=0x0（type=8，19b 实测三行一致），窗口才是 koff≠0 +
+  `handle@+0`（19b 再次实锤）。
+- minidump 定位链：`ln 0xfffff80138b739a6`（私有 PDB 命中）→ kb 全断
+  时用 `dps @rsp L400` 扫栈上 MyArkCore 区间返回地址逐个 `ln`，完整
+  还原 `IoDeviceControl→0x772→EnumUserHandles→MyArkWin32kRead→memcpy`。
+
+### 修复尝试
+1. reader：内核地址（≥0xFFFF800000000000）加 `MmIsAddressValid` 前置门，
+   用户地址保留纯 `__try` 快路径（与 dyndata/callback 同款，B4 残余
+   一致）。
+2. 扫描防垃圾：页对齐内核指针直接跳过（真池对象必有 ≥16B pool
+   header——本次肇事垃圾指针恰好页对齐）；自引用形态 `{v+8, v+0x18}`
+   过滤；候选按 base 去重、上限 8 个。
+3. 填充与语义：每行按候选序试 `base+koff` hdr 自检，命中即停；
+   **bit1 语义升级为"≥1 行实际自验证通过"**（结构性候选可能全是
+   垃圾，不许只凭结构宣称成功），rsv2 面包屑 0x11/0x12/0x13 重定义。
+4. verify P3-4 改为 message-only 窗口（`DefWindowProcA` 直作 WNDPROC，
+   免 python 回调）：bit1 时该行 kobj 必须 canonical（kobj 非零本身
+   即驱动侧 hdr 自检通过的证明，R3 不重复比句柄）。
+5. 舰队：`vm_run_verify.bat` 加随机 token 回显（guest 链内 echo 进
+   OUT/verdict，宿主校验 token 后才认证据）+ 小文件 verdict 回退通道
+   （10 次重试轮询）——大拉取失败/exec 静默 no-op 均不再产生假绿。
+
+### 关键决策回顾
+- **每行候选循环而非预选单一基址**：18c 证明假阳性候选必然存在
+  （explorer +0x350 垃圾对 0/30），结构过滤永远不完美；hdr 逐行
+  自检是唯一可信防线，多桌面进程（Default+服务）还能各行命中各自
+  堆。
+- **bit1 = 实证而非推断**：评审 P3-4 的精神——"派生成功"必须由
+  可复核的行背书，否则 s0 套件的严格断言会建立在结构巧合上。
+- **不修 accel**：accel 表在普通池、无 koff，驱动跳过 koff=0 是对
+  的；把 P3-4 挂到窗口上而不是放宽 hdr 检查去迁就 accel。
+- **token 化舰队证据**：本次 4 轮"假绿/假败"全源于通道静默失效，
+  与 vm_alive_check 的 token 纪律对齐后这类污染不可再发生。
+
+### TODO
+- 22631 的 W32P 扫描标定（当前 HeapScanBytes=0 门控，bit1=0
+  informational）——下一步 R3-10b-iv 收尾。
+- MUTTX `PREPARE err=1450` 在脏 guest 上偶发、干净重启后消失——
+  若复现再查 R3-8 事务池。
+- `MmIsAddressValid` 仓库级加固（B4，需值守窗口）；win32k reader 现与 dyndata/callback 同为 MmIsAddressValid 门控裸读（且扫描面每调用解引用数千个不可信候选值），是 B4 式迁移 `MmCopyMemory` 的下一顺位候选。

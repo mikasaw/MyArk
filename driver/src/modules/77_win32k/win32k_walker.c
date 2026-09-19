@@ -25,6 +25,16 @@
 // One guarded read for both user and session-space addresses. Caller
 // context at PASSIVE_LEVEL makes the __try probe legal for user VAs.
 //
+//
+// Guarded reader. __try/RtlCopyMemory is only fault-safe for USER
+// addresses: a KERNEL address whose PTE cannot be resolved bugchecks
+// 0x50 inside the copy -- the exception handler never runs (KDNET round
+// 18c crash: the W32PROCESS heap-base scan dereferenced a stale kernel
+// pointer). Kernel/session targets therefore get the house-standard
+// MmIsAddressValid gate first (same residual as the dyndata/callback
+// walkers, KNOWN_ISSUES B4), user targets keep the pure guarded copy.
+// PASSIVE_LEVEL, caller context only.
+//
 static BOOLEAN MyArkWin32kRead(
     _In_ PVOID Address,
     _Out_writes_bytes_(Length) PVOID Buffer,
@@ -32,6 +42,13 @@ static BOOLEAN MyArkWin32kRead(
 {
     BOOLEAN ok = FALSE;
 
+    if (Address == NULL || Length == 0) {
+        return FALSE;
+    }
+    if ((UINT64)(UINT_PTR)Address >= 0xFFFF800000000000ULL
+        && !MmIsAddressValid(Address)) {
+        return FALSE;
+    }
     __try {
         RtlCopyMemory(Buffer, Address, Length);
         ok = TRUE;
@@ -261,24 +278,33 @@ static BOOLEAN MyArkWin32kResolveSharedInfo(
 // A zero RVA row = not yet calibrated (the resolver refuses, output
 // falls back to the user-copy fields).
 //
+// Desktop-heap base candidates per enum call (KDNET round 18c: explorer
+// carried a real Default-desktop object plus a junk pair-shaped block;
+// 8 slots cover both real desktops with margin).
+#define MYARK_WIN32K_HEAP_MAX_CAND 8
+
 typedef struct _MYARK_WIN32KBASE_PROFILE {
     ULONG BuildMin;
     ULONG BuildMax;
     ULONG GSharedInfoRva;
-    // KDNET round 16 (1903): desktop-heap kernel base runtime chain.
-    // W32PROCESS + HeapDescOff -> descriptor; heap base = *(desc - Delta).
-    // Zero HeapDescOff = heap derivation not calibrated for the build.
-    ULONG HeapDescOff;
-    ULONG HeapBaseDeltaBack;
+    // KDNET rounds 18-18c (1903): desktop-heap kernel base derivation.
+    // The caller's W32PROCESS is scanned over HeapScanBytes for pointers
+    // to kernel desktop objects; an object qualifies when its +0x10 /
+    // +0x18 qwords form a (base, base+size) desktop-heap pair. A process
+    // can carry several real desktops (Default, Winlogon, service) and
+    // junk that passes the pair test -- each row picks its base via the
+    // per-row hdr self-check, so candidates never fabricate row values.
+    // Zero HeapScanBytes = heap derivation not calibrated for the build.
+    ULONG HeapScanBytes;
 } MYARK_WIN32KBASE_PROFILE;
 
 static const MYARK_WIN32KBASE_PROFILE g_MyArkWin32kBaseProfiles[] = {
-    // KDNET-calibrated 2026-09-19 (rounds 8/16)
-    { 18362, 18363, 0x213750, 0x7F8, 0x28 },
-    // 22631: gSharedInfo RVA calibrated (round 8); the heap-base chain
-    // was NOT re-derived there (nodes/pool layout differ -- see
+    // KDNET-calibrated 2026-09-19 (rounds 8/18c)
+    { 18362, 18363, 0x213750, 0x800 },
+    // 22631: gSharedInfo RVA calibrated (round 8); the heap-base scan
+    // was NOT re-derived there (W32PROCESS layout differs -- see
     // R3-10b-iv notes), so derivation stays gated off.
-    { 22621, 22631, 0x285e80, 0, 0 },
+    { 22621, 22631, 0x285e80, 0 },
 };
 
 static const MYARK_WIN32KBASE_PROFILE*
@@ -453,7 +479,9 @@ MyArkWin32kEnumUserHandles(
     UINT64 aheList = 0;
     UINT32 heEntrySize = 0;
     UINT64 kAheWalk = 0;
-    UINT64 heapBase = 0;
+    UINT64 heapBases[MYARK_WIN32K_HEAP_MAX_CAND];
+    ULONG heapBaseCount = 0;
+    ULONG heapValidated = 0;
     ULONG index;
     ULONG freeRun = 0;
 
@@ -518,36 +546,109 @@ MyArkWin32kEnumUserHandles(
                     Out->PsiMatch = (kPsi == psi) ? 1 : 0;
                     kAheWalk = kAhe;
 
-                    // R3-10b-iv: derive the desktop-heap kernel base for
-                    // the caller's desktop. W32PROCESS + HeapDescOff
-                    // points at a heap-view descriptor whose field at
-                    // -HeapBaseDeltaBack holds the base (KDNET round 16,
-                    // 1903: +0x7f8 / -0x28). Every derived row is
-                    // self-checked below, so a wrong base can never
-                    // fabricate a row value.
-                    if (profile->HeapDescOff != 0) {
+                    // R3-10b-iv: derive candidate desktop-heap kernel
+                    // bases for the caller by scanning its W32PROCESS.
+                    // KDNET rounds 18-18c (1903): kernel desktop objects
+                    // carry (base @+0x10, base+size @+0x18); the scan
+                    // keeps every structurally-valid pair, interactive
+                    // and service desktops alike. The old fixed chain
+                    // (W32P+0x7f8 / -0x28) measured 3/30 ahe-row matches
+                    // on explorer -- it latched the Winlogon-desktop
+                    // heap -- so no fixed offset is trusted here. Rows
+                    // below pick a candidate per object via the hdr
+                    // self-check; PsiMatch bit1 only sets when >=1 row
+                    // actually validates.
+                    if (profile->HeapScanBytes != 0) {
                         PVOID w32p = PsGetProcessWin32Process(
                             PsGetCurrentProcess());
-                        UINT64 desc = 0;
-                        ULONG hstage = 0;
                         if (w32p == NULL) {
-                            hstage = 0x11;
-                        } else if (!MyArkWin32kReadU64(
-                                       (PVOID)((UINT64)(UINT_PTR)w32p +
-                                               profile->HeapDescOff), &desc) ||
-                                   desc <= 0xFFFF800000000000ULL) {
-                            hstage = 0x12;
-                        } else if (!MyArkWin32kReadU64(
-                                       (PVOID)(desc - profile->HeapBaseDeltaBack),
-                                       &heapBase) ||
-                                   heapBase <= 0xFFFF800000000000ULL) {
-                            hstage = 0x13;
-                        }
-                        if (hstage == 0) {
-                            Out->PsiMatch |= 2;   // bit1: heap base derived
+                            Out->Reserved2 = 0x100 | 0x11;  // no W32PROCESS
                         } else {
-                            heapBase = 0;
-                            Out->Reserved2 = 0x100 | hstage; // DIAG breadcrumb
+                            UCHAR chunk[512];
+                            ULONG off;
+                            BOOLEAN scanAbort = FALSE;
+                            for (off = 0;
+                                 off < profile->HeapScanBytes
+                                 && heapBaseCount
+                                    < MYARK_WIN32K_HEAP_MAX_CAND;
+                                 off += sizeof(chunk)) {
+                                ULONG n = profile->HeapScanBytes - off;
+                                ULONG i;
+                                if (n > sizeof(chunk)) {
+                                    n = sizeof(chunk);
+                                }
+                                if (!MyArkWin32kRead(
+                                        (PVOID)((UINT64)(UINT_PTR)w32p
+                                                + off),
+                                        chunk, n)) {
+                                    scanAbort = TRUE;
+                                    break;
+                                }
+                                // The 32-byte shape read happens at the
+                                // absolute pointer v, not in-chunk -- the
+                                // only in-chunk bound is the qword load.
+                                for (i = 0;
+                                     i + 8 <= n
+                                     && heapBaseCount
+                                        < MYARK_WIN32K_HEAP_MAX_CAND;
+                                     i += 8) {
+                                    UINT64 v = *(UINT64*)(chunk + i);
+                                    UINT64 pair[4];
+                                    ULONG ci;
+                                    BOOLEAN dupe = FALSE;
+                                    if (v < 0xFFFF800000000000ULL
+                                        || (v & 7) != 0) {
+                                        continue;
+                                    }
+                                    // Real pool objects carry a pool header
+                                    // (>=16B), so a page-aligned kernel
+                                    // pointer is a VA/size/mapping value,
+                                    // not an object (KDNET 18c crash: the
+                                    // junk pointer that faulted was exactly
+                                    // one of these).
+                                    if ((v & 0xFFF) == 0) {
+                                        continue;
+                                    }
+                                    if (v >= (UINT64)(UINT_PTR)w32p
+                                        && v < (UINT64)(UINT_PTR)w32p
+                                               + profile->HeapScanBytes) {
+                                        continue;   // points into itself
+                                    }
+                                    if (!MyArkWin32kRead(
+                                            (PVOID)(UINT_PTR)v,
+                                            pair, sizeof(pair))) {
+                                        continue;
+                                    }
+                                    if (pair[2] < 0xFFFF800000000000ULL
+                                        || pair[3] < 0xFFFF800000000000ULL
+                                        || pair[3] <= pair[2]
+                                        || pair[3] - pair[2] > 0x4000000ULL
+                                        || (pair[2] >> 28)
+                                           != (pair[3] >> 28)
+                                        // junk shape: self-referential
+                                        // pool block ({v+8, v+0x18})
+                                        || (pair[2] == v + 8
+                                            && pair[3] == v + 0x18)) {
+                                        continue;
+                                    }
+                                    for (ci = 0; ci < heapBaseCount; ci++) {
+                                        if (heapBases[ci] == pair[2]) {
+                                            dupe = TRUE;
+                                            break;
+                                        }
+                                    }
+                                    if (!dupe) {
+                                        heapBases[heapBaseCount++] = pair[2];
+                                    }
+                                }
+                            }
+                            if (heapBaseCount == 0) {
+                                // 0x12 = scanned clean, no structural
+                                // candidate; 0x14 = chunk read aborted
+                                // (unrelated failure mode, keep apart).
+                                Out->Reserved2 = 0x100
+                                    | (scanAbort ? 0x14 : 0x12);
+                            }
                         }
                     }
                 } else {
@@ -608,31 +709,48 @@ MyArkWin32kEnumUserHandles(
         Out->Entries[Out->Count].KernelObject = head;
         Out->Entries[Out->Count].UserPointer = user;
 
-        // R3-10b-iv: with the desktop-heap base derived, the KERNEL
-        // aheList record at the same slot holds the object's heap offset
-        // (record@0). Self-check: the object's first qword carries its
-        // own handle (index | gen<<16) -- fill KernelObject only when it
-        // matches, so a wrong base can never fabricate a row value.
+        // R3-10b-iv: with desktop-heap base candidates derived, the
+        // KERNEL aheList record at the same slot holds the object's heap
+        // offset (record@0). Every win32k desktop-heap object starts with
+        // its own handle (tagHEAD.h) -- fill KernelObject only when some
+        // candidate base + offset actually carries this row's handle,
+        // trying each candidate (multi-desktop processes) until one
+        // matches, so a wrong or junk base can never fabricate a value.
         // Gate: gen@26 decoding assumes the calibrated 32-byte stride.
-        if (heapBase != 0 && kAheWalk != 0 && heEntrySize == 32) {
+        if (heapBaseCount != 0 && kAheWalk != 0 && heEntrySize == 32) {
             UCHAR kraw[32];
             if (MyArkWin32kRead((PVOID)(kAheWalk + (UINT64)index * heEntrySize),
                                 kraw, heEntrySize)) {
                 UINT32 koff = *(UINT32*)(kraw + 0);
                 UINT16 kgen = *(UINT16*)(kraw + 26);
-                UINT64 kobj = heapBase + koff;
-                UINT64 hdr = 0;
-                if (koff != 0 &&
-                    MyArkWin32kRead((PVOID)(UINT_PTR)kobj, &hdr,
-                                    sizeof(hdr)) &&
-                    (hdr & 0xFFFFFFFFULL) ==
-                        (UINT32)(index | ((UINT32)kgen << 16))) {
-                    Out->Entries[Out->Count].KernelObject = kobj;
+                if (koff != 0) {
+                    ULONG ci;
+                    for (ci = 0; ci < heapBaseCount; ci++) {
+                        UINT64 kobj = heapBases[ci] + koff;
+                        UINT64 hdr = 0;
+                        if (MyArkWin32kRead((PVOID)(UINT_PTR)kobj, &hdr,
+                                            sizeof(hdr)) &&
+                            (hdr & 0xFFFFFFFFULL) ==
+                                (UINT32)(index | ((UINT32)kgen << 16))) {
+                            Out->Entries[Out->Count].KernelObject = kobj;
+                            heapValidated++;
+                            break;
+                        }
+                    }
                 }
             }
         }
 
         Out->Count += 1;
+    }
+
+    // PsiMatch bit1: honest "heap base derived" = at least one row was
+    // self-validated against a candidate base (KDNET round 18c: pair-shaped
+    // junk exists, so structure alone must not claim success).
+    if (heapValidated != 0) {
+        Out->PsiMatch |= 2;
+    } else if (heapBaseCount != 0) {
+        Out->Reserved2 = 0x100 | 0x13;  // candidates, zero rows validated
     }
 
     Out->ScannedSlots = index;  // slots scanned before stop (diag)
