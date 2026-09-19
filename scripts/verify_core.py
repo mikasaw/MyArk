@@ -3499,6 +3499,130 @@ def _win32k_enum_timers(handle):
             scanned, truncated, timer_rva, _rsv2, rows)
 
 
+# --- [WIN32K 0x774] R3-10c: WinEvent hook list ------------------------------
+
+IOCTL_MYARK_WIN32K_ENUM_EVENTHOOKS = _ctl_code(FILE_DEVICE_UNKNOWN, 0x774, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+_STATUS_NOT_IMPLEMENTED = 0xC0000002
+
+_WIN32K_EVENTHOOK_CAP = 256
+_WIN32K_EVENTHOOK_ENTRY_SIZE = 64  # 4+4+4+4+4+4+4+4 + 4×UINT64
+# 0x774 C header is 56 bytes (Count..Reserved4), entries follow.
+_WIN32K_EVENTHOOKS_OUT_SIZE = (56 + _WIN32K_EVENTHOOK_ENTRY_SIZE
+                               * _WIN32K_EVENTHOOK_CAP)
+
+
+def _win32k_enum_eventhooks(handle):
+    payload = _ioctl(handle, IOCTL_MYARK_WIN32K_ENUM_EVENTHOOKS, b"",
+                     _WIN32K_EVENTHOOKS_OUT_SIZE)
+    count, diag = struct.unpack_from("<II", payload, 0)
+    list_head, session_base = struct.unpack_from("<QQ", payload, 8)
+    node_size, truncated = struct.unpack_from("<II", payload, 24)
+    rva, = struct.unpack_from("<Q", payload, 32)
+    rsv2, = struct.unpack_from("<I", payload, 40)
+    rows = []
+    for i in range(count):
+        base = 56 + i * _WIN32K_EVENTHOOK_ENTRY_SIZE
+        idx, emin, emax, flags_i, idproc, idthread = \
+            struct.unpack_from("<IIIIII", payload, base)
+        handle, callback, node = struct.unpack_from("<QQQ", payload,
+                                                    base + 32)
+        rows.append((idx, emin, emax, flags_i, idproc, idthread,
+                     handle, callback, node))
+    return (count, diag, list_head, session_base, node_size, truncated,
+            rva, rsv2, rows)
+
+
+def verify_win32k_eventhooks(handle) -> None:
+    _step("WIN32K WinEvent hook list + marker probe (R3-10c)")
+    user32 = ctypes.WinDLL("user32")
+
+    try:
+        res = _win32k_enum_eventhooks(handle)
+    except OSError as exc:
+        check("WIN32KEH", "0x774 enum", False, str(exc))
+        return
+    count, diag, list_head, session_base, node_size, truncated, \
+        hook_rva, rsv2, rows = res
+
+    # Build gate: uncalibrated builds refuse with STATUS_NOT_IMPLEMENTED
+    # (0xC0000002) and Count = 0 -- informational, same policy as 0x773.
+    if diag == _STATUS_NOT_IMPLEMENTED:
+        check("WIN32KEH", "0x774 gated on this build (informational)",
+              count == 0 and hook_rva == 0,
+              "diag=0x%08X rva=0x%X" % (diag, hook_rva))
+        return
+
+    check("WIN32KEH", "0x774 baseline: gpWinEventHooks resolved + list walked",
+          diag == 0 and list_head > 0xFFFF800000000000
+          and session_base > 0xFFFF800000000000 and node_size == 0x60,
+          "count=%d diag=0x%08X head=0x%X base=0x%X node=0x%X rva=0x%X"
+          % (count, diag, list_head, session_base, node_size, hook_rva))
+
+    # Marker round-trip: 3 hooks with distinct event-range pairs must come
+    # back as rows carrying the exact filter and a user-mode callback, and
+    # vanish again on UnhookWinEvent.
+    WINEVENTPROC = ctypes.WINFUNCTYPE(
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32,
+        ctypes.c_void_p, ctypes.c_long, ctypes.c_long,
+        ctypes.c_uint32, ctypes.c_ulong)
+    user32.SetWinEventHook.restype = ctypes.c_void_p
+    user32.SetWinEventHook.argtypes = [
+        ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+        WINEVENTPROC, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32]
+    user32.UnhookWinEvent.argtypes = [ctypes.c_void_p]
+
+    specs = [
+        (0x00008000, 0x00008002, 0x2),  # SKIPOWNPROCESS
+        (0x00008010, 0x00008012, 0x0),
+        (0x00008020, 0x00008022, 0x2),
+    ]
+    keepers = []
+    marker_handles = []
+    for emin, emax, flags in specs:
+        @WINEVENTPROC
+        def cb(hook, event, hwnd, obj, child, thread, ms):
+            return None
+        keepers.append(cb)
+        h = user32.SetWinEventHook(emin, emax, None, cb, 0, 0, flags)
+        if h:
+            marker_handles.append((h, emin, emax, flags))
+    check("WIN32KEH", "0x774 marker hooks registered",
+          len(marker_handles) == len(specs),
+          "registered=%d" % len(marker_handles))
+
+    if marker_handles:
+        res2 = _win32k_enum_eventhooks(handle)
+        rows2 = res2[8]
+        by_handle = {}
+        for r in rows2:
+            by_handle.setdefault(r[6], []).append(r)
+        matched = 0
+        for h, emin, emax, flags in marker_handles:
+            for r in by_handle.get(h & 0xFFFFFFFF, []):
+                # callback is a USER-mode WinEventProc trampoline, not a
+                # kernel pointer -- user-range plausibility only.
+                if r[1] == emin and r[2] == emax \
+                        and r[4] == 0xFFFFFFFF \
+                        and 0 < r[7] < 0x0000800000000000:
+                    matched += 1
+        check("WIN32KEH",
+              "0x774 marker hooks visible with exact filters",
+              matched == len(marker_handles),
+              "matched=%d/%d (event range + idProcess + user callback)"
+              % (matched, len(marker_handles)))
+
+        for h, _emin, _emax, _flags in marker_handles:
+            user32.UnhookWinEvent(ctypes.c_void_p(h))
+        res3 = _win32k_enum_eventhooks(handle)
+        rows3 = res3[8]
+        gone = sum(1 for r in rows3 if r[6] in
+                   {h & 0xFFFFFFFF for h, _e, _m, _f in marker_handles})
+        check("WIN32KEH", "0x774 unhooked marker hooks gone",
+              res3[1] == 0 and gone == 0,
+              "still_linked=%d rows=%d" % (gone, res3[0]))
+
+
 def verify_win32k_timers(handle) -> None:
     # 0x773 is build-gated in the driver: only builds with a differential
     # TIMER calibration (18362/18363) serve rows; others answer with
@@ -4099,6 +4223,7 @@ MATRIX_READ_ONLY = [
     ("kernel_object", "IPC_SUMMARY", 0x911),
     ("win32k", "ENUM_USER_HANDLES", 0x772),
     ("win32k", "ENUM_TIMERS", 0x773),
+    ("win32k", "ENUM_EVENTHOOKS", 0x774),
     ("handle", "ENUM_PROCESS_HANDLES", 0xC00),
     ("handle", "QUERY_HANDLE", 0xC01),
     ("section", "QUERY_PROCESS", 0xC10),
@@ -4302,7 +4427,6 @@ _MYARK_FLAG_UI_CONFIRMED = 0x1
 _MYARK_FLAG_FORCE = 0x2
 _MYARK_FLAG_CAPTURE_START = 0x4
 
-_STATUS_NOT_IMPLEMENTED = 0xC0000002
 _STATUS_NOT_FOUND = 0xC0000225
 
 _IOCTL_STORAGE_QUERY_PROPERTY = (0x2D << 16) | (0x500 << 2)
@@ -5452,6 +5576,7 @@ def main() -> int:
         verify_kernel_object(handle)
         verify_win32k_handles(handle)
         verify_win32k_timers(handle)
+        verify_win32k_eventhooks(handle)
         verify_registry(handle, session_key)
         verify_hook_scan(handle)
         verify_hook_patch(handle, session_key)
@@ -5508,8 +5633,9 @@ def main() -> int:
         ("CIDTBL",    "(8i) PspCidTable + hidden detection (R3-4)"),
         ("KOBJ",      "(8j) object-directory walk + IPC summary (R3-4b)"),
         ("WIN32K",    "(8k) USER handle table + accel probe (R3-10a)"),
+        ("WIN32KEH",  "(8l) WinEvent hook list + marker probe (R3-10c)"),
         ("FILE",       "(5b) file R0 delete chain + query info"),
-        ("MATRIX",     "(7) full IOCTL matrix (58 read-only + 8 mutating)"),
+        ("MATRIX",     "(7) full IOCTL matrix (59 read-only + 8 mutating)"),
         ("DYNDATA",    "(smoke) dyndata read-only"),
         ("CALLBACK",   "(smoke) callback read-only"),
     ]

@@ -71,4 +71,13 @@ MyArkWin32kEnumTimers(
     _Out_ PMYARK_WIN32K_TIMERS_OUTPUT Out,
     _In_  ULONG                       MaxEntries);
 
+//
+// R3-10c: walk the session WinEvent hook list (win32kbase!
+// gpWinEventHooks) in the caller's session context. Same contract.
+//
+NTSTATUS
+MyArkWin32kEnumEventHooks(
+    _Out_ PMYARK_WIN32K_EVENTHOOKS_OUTPUT Out,
+    _In_  ULONG                           MaxEntries);
+
 #endif

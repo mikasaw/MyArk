@@ -1,6 +1,6 @@
 // MyArk win32k module: shared IOCTL protocol between R0 and R3.
 //
-// Function range 0x770..0x773. Win32k inspection is read-only:
+// Function range 0x770..0x774. Win32k inspection is read-only:
 //   0x770  ENUMERATE_GUI_THREADS - S7.3 stub (Count=0)
 //   0x771  ENUMERATE_HOOKS       - S7.3 stub (Count=0)
 //   0x772  ENUM_USER_HANDLES     - R3-10a: caller-process USER handle
@@ -30,7 +30,7 @@
 #define MYARK_WIN32K_HARD_CAP                 64
 
 //
-// 2 IOCTLs (function range 0x770..0x771). Method/Access match the rest
+// function range 0x770..0x774. Method/Access match the rest
 // of the driver: METHOD_BUFFERED + FILE_ANY_ACCESS.
 //
 #define IOCTL_MYARK_WIN32K_ENUMERATE_GUI_THREADS \
@@ -211,3 +211,60 @@ typedef struct _MYARK_WIN32K_TIMERS_OUTPUT {
     UINT64  Reserved4;
     MYARK_WIN32K_TIMER_ENTRY Entries[MYARK_WIN32K_TIMER_CAP];
 } MYARK_WIN32K_TIMERS_OUTPUT, *PMYARK_WIN32K_TIMERS_OUTPUT;
+
+// ---------------------------------------------------------------------------
+// 0x774 ENUM_EVENTHOOKS (R3-10c).
+//
+// Walks the session WinEvent hook list win32kbase!gpWinEventHooks in the
+// caller's session context and reports one row per registered
+// SetWinEventHook: the filter (EventMin/EventMax), the user-mode callback,
+// the process/thread scoping, and the hook's USER handle (type 15 row in
+// the 0x772 table). Forensic value: WinEvent surveillance is a common
+// monitoring/persistence primitive and these rows are the only place the
+// filter/callback pairing is visible.
+//
+// List semantics (KDNET-calibrated, 1903): gpWinEventHooks points at the
+// most recently registered EVENTHOOK; nodes chain via a single next
+// pointer @+0x18, NULL-terminated (LIFO). Node offsets (see
+// win32k_walker.c) were calibrated on 1903 with three probe hooks carrying
+// distinctive event-range pairs; the verifier re-validates them at run
+// time with its own marker hooks, exactly like the 0x773 timer offsets.
+//
+// Build gating: without a differential EVENTHOOK calibration the IOCTL
+// refuses cleanly with DiagStatus = STATUS_NOT_IMPLEMENTED and Count = 0.
+// ---------------------------------------------------------------------------
+
+#define IOCTL_MYARK_WIN32K_ENUM_EVENTHOOKS \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x774, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define MYARK_WIN32K_EVENTHOOK_CAP            256
+
+typedef struct _MYARK_WIN32K_EVENTHOOK_ENTRY {
+    UINT32  Index;                               // ordinal in this report
+    UINT32  EventMin;                            // filter low event
+    UINT32  EventMax;                            // filter high event
+    UINT32  FlagsInternal;                       // dword @+0x28 (dwFlags
+                                                 // re-encoding; raw, diag)
+    UINT32  IdProcess;                           // raw (0xFFFFFFFF = all)
+    UINT32  IdThread;                            // raw (0 = all)
+    UINT32  Reserved0;
+    UINT32  Reserved1;
+    UINT64  Handle;                              // USER handle (0x772 type 15)
+    UINT64  Callback;                            // user-mode WinEventProc
+    UINT64  Node;                                // EVENTHOOK node kernel VA
+    UINT64  Reserved2;
+} MYARK_WIN32K_EVENTHOOK_ENTRY, *PMYARK_WIN32K_EVENTHOOK_ENTRY;
+
+typedef struct _MYARK_WIN32K_EVENTHOOKS_OUTPUT {
+    UINT32  Count;                               // rows written
+    UINT32  DiagStatus;                          // NTSTATUS of deepest failure
+    UINT64  ListHead;                            // kernel gpWinEventHooks VA
+    UINT64  SessionBase;                         // win32kbase session base
+    UINT32  NodeSize;                            // calibrated node size (diag)
+    UINT32  Truncated;                           // 1 = live rows beyond CAP
+    UINT64  WinEventHooksRva;                    // profile RVA used (diag)
+    UINT32  Reserved2;                           // resolver stage breadcrumb
+    UINT32  Reserved3;
+    UINT64  Reserved4;
+    MYARK_WIN32K_EVENTHOOK_ENTRY Entries[MYARK_WIN32K_EVENTHOOK_CAP];
+} MYARK_WIN32K_EVENTHOOKS_OUTPUT, *PMYARK_WIN32K_EVENTHOOKS_OUTPUT;

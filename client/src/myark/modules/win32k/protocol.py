@@ -154,3 +154,42 @@ class MYARK_WIN32K_TIMERS_OUTPUT(ctypes.Structure):
         ("Reserved4", ctypes.c_uint64),
         ("Entries", MYARK_WIN32K_TIMER_ENTRY * WIN32K_TIMER_CAP),
     ]
+
+# --- R3-10c: WinEvent hook list (win32kbase!gpWinEventHooks) -----------------
+
+IOCTL_MYARK_WIN32K_ENUM_EVENTHOOKS = _ctl_code(0x774)
+
+WIN32K_EVENTHOOK_CAP = 256
+
+
+class MYARK_WIN32K_EVENTHOOK_ENTRY(ctypes.Structure):
+    _fields_ = [
+        ("Index", ctypes.c_uint32),
+        ("EventMin", ctypes.c_uint32),
+        ("EventMax", ctypes.c_uint32),
+        ("FlagsInternal", ctypes.c_uint32),
+        ("IdProcess", ctypes.c_uint32),
+        ("IdThread", ctypes.c_uint32),
+        ("Reserved0", ctypes.c_uint32),
+        ("Reserved1", ctypes.c_uint32),
+        ("Handle", ctypes.c_uint64),
+        ("Callback", ctypes.c_uint64),
+        ("Node", ctypes.c_uint64),
+        ("Reserved2", ctypes.c_uint64),
+    ]
+
+
+class MYARK_WIN32K_EVENTHOOKS_OUTPUT(ctypes.Structure):
+    _fields_ = [
+        ("Count", ctypes.c_uint32),
+        ("DiagStatus", ctypes.c_uint32),
+        ("ListHead", ctypes.c_uint64),
+        ("SessionBase", ctypes.c_uint64),
+        ("NodeSize", ctypes.c_uint32),
+        ("Truncated", ctypes.c_uint32),
+        ("WinEventHooksRva", ctypes.c_uint64),
+        ("Reserved2", ctypes.c_uint32),
+        ("Reserved3", ctypes.c_uint32),
+        ("Reserved4", ctypes.c_uint64),
+        ("Entries", MYARK_WIN32K_EVENTHOOK_ENTRY * WIN32K_EVENTHOOK_CAP),
+    ]

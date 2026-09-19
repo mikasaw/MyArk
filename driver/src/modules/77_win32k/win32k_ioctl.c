@@ -141,4 +141,42 @@ NTSTATUS MyArkWin32kIoctlEnumerateTimers(
     return STATUS_SUCCESS;
 }
 
+//
+// 0x774 ENUM_EVENTHOOKS (R3-10c): walk the session WinEvent hook list via
+// win32kbase!gpWinEventHooks. Read-only, no SAFETY_TOKEN (enum surface).
+// Caller context, same session caveat as 0x773.
+//
+NTSTATUS MyArkWin32kIoctlEnumerateEventHooks(
+    _In_  WDFDEVICE  Device,
+    _In_  WDFREQUEST Request,
+    _In_  size_t     InputBufferLength,
+    _In_  size_t     OutputBufferLength,
+    _Out_ size_t*    BytesReturned)
+{
+    NTSTATUS status;
+    PVOID    out_buf;
+    size_t   out_size = sizeof(MYARK_WIN32K_EVENTHOOKS_OUTPUT);
+    ULONG    maxEntries = MYARK_WIN32K_EVENTHOOK_CAP;
+
+    UNREFERENCED_PARAMETER(Device);
+    UNREFERENCED_PARAMETER(InputBufferLength);
+
+    if (OutputBufferLength < out_size) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    status = MyArkIoctlFetchOutputBuffer(Request, out_size, &out_buf);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    status = MyArkWin32kEnumEventHooks(
+        (PMYARK_WIN32K_EVENTHOOKS_OUTPUT)out_buf, maxEntries);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    *BytesReturned = out_size;
+    return STATUS_SUCCESS;
+}
+
 #endif // MYARK_MODULE_WIN32K

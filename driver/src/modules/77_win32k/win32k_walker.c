@@ -934,4 +934,155 @@ MyArkWin32kEnumTimers(
     return STATUS_SUCCESS;
 }
 
+//
+// win32kbase!gpWinEventHooks RVA profile (KDNET-calibrated, see
+// CRASH_DEBUG_LOG R3-10c). Zero RVA row = not yet calibrated.
+//
+typedef struct _MYARK_WIN32K_EVENTHOOK_PROFILE {
+    ULONG BuildMin;
+    ULONG BuildMax;
+    ULONG GpWinEventHooksRva;
+} MYARK_WIN32K_EVENTHOOK_PROFILE;
+
+static const MYARK_WIN32K_EVENTHOOK_PROFILE
+g_MyArkWin32kEventHookProfiles[] = {
+    // KDNET round 20b/20c (2026-09-20): symbol-resolved live, base
+    // 0xFFFFFF08D4FB0000 this boot.
+    { 18362, 18363, 0x219200 },
+    // 22621/22631: gated until a differential EVENTHOOK calibration
+    // lands -- same policy as the 0x773 timer table there.
+    { 22621, 22631, 0 },
+};
+
+static const MYARK_WIN32K_EVENTHOOK_PROFILE*
+MyArkWin32kEventHookProfileForBuild(_In_ ULONG Build)
+{
+    ULONG i;
+    for (i = 0; i < ARRAYSIZE(g_MyArkWin32kEventHookProfiles); i++) {
+        if (Build >= g_MyArkWin32kEventHookProfiles[i].BuildMin
+            && Build <= g_MyArkWin32kEventHookProfiles[i].BuildMax
+            && g_MyArkWin32kEventHookProfiles[i].GpWinEventHooksRva != 0) {
+            return &g_MyArkWin32kEventHookProfiles[i];
+        }
+    }
+    return NULL;
+}
+
+//
+// EVENTHOOK node field offsets. KDNET-calibrated on 1903 (CRASH_DEBUG_LOG
+// R3-10c) with three probe hooks carrying distinctive event-range pairs:
+// USER handle @0x00 (0x772 type-15 row), next pointer @0x18 (singly
+// linked, LIFO, NULL-terminated), EventMin/EventMax dwords @0x20/0x24,
+// internal flags dword @0x28 (probe dwFlags 0x2/0x0 measured as 0x4/0x0),
+// user-mode WinEventProc @0x40, idProcess @0x48 (0 registered as
+// 0xFFFFFFFF = all), idThread @0x50. Run-time revalidation: verify_core
+// registers its own marker hooks and asserts they come back through
+// 0x774, so a layout drift fails the test instead of yielding silently
+// wrong rows.
+//
+#define MYARK_WIN32K_EVENTHOOK_SIZE         0x60
+#define MYARK_WIN32K_EVENTHOOK_OFF_NEXT     0x18
+#define MYARK_WIN32K_EVENTHOOK_OFF_EMIN     0x20
+#define MYARK_WIN32K_EVENTHOOK_OFF_INTERNAL 0x28
+#define MYARK_WIN32K_EVENTHOOK_OFF_PROC     0x40
+#define MYARK_WIN32K_EVENTHOOK_OFF_IDPROCESS 0x48
+#define MYARK_WIN32K_EVENTHOOK_OFF_IDTHREAD 0x50
+#define MYARK_WIN32K_EVENTHOOK_MAX_HOPS     1024    // loop safety cap
+
+NTSTATUS
+MyArkWin32kEnumEventHooks(
+    _Out_ PMYARK_WIN32K_EVENTHOOKS_OUTPUT Out,
+    _In_  ULONG                           MaxEntries)
+{
+    NTSTATUS diag = STATUS_SUCCESS;
+    RTL_OSVERSIONINFOW os;
+    const MYARK_WIN32K_EVENTHOOK_PROFILE* profile;
+    UINT64 sessionBase = 0;
+    UINT64 listHead = 0;
+    UINT64 node = 0;
+    ULONG hops;
+
+    RtlZeroMemory(Out, sizeof(*Out));
+
+    RtlZeroMemory(&os, sizeof(os));
+    os.dwOSVersionInfoSize = sizeof(os);
+    if (!NT_SUCCESS(RtlGetVersion(&os))) {
+        Out->DiagStatus = (UINT32)STATUS_NOT_SUPPORTED;
+        return STATUS_SUCCESS;
+    }
+    profile = MyArkWin32kEventHookProfileForBuild(os.dwBuildNumber);
+    if (profile == NULL) {
+        // Not calibrated for this build (zero-RVA row or no row): refuse
+        // cleanly instead of serving another build's node offsets.
+        Out->DiagStatus = (UINT32)STATUS_NOT_IMPLEMENTED;
+        return STATUS_SUCCESS;
+    }
+    Out->WinEventHooksRva = profile->GpWinEventHooksRva;
+
+    {
+        UINT32 stage = 0;
+        if (!MyArkWin32kFindSessionImage(&sessionBase, &stage)) {
+            Out->Reserved2 = stage;         // DIAG breadcrumb
+            Out->DiagStatus = (UINT32)STATUS_NOT_FOUND;
+            return STATUS_SUCCESS;
+        }
+    }
+    Out->SessionBase = sessionBase;
+    listHead = sessionBase + profile->GpWinEventHooksRva;
+    Out->ListHead = listHead;
+    Out->NodeSize = MYARK_WIN32K_EVENTHOOK_SIZE;
+
+    if (!MyArkWin32kReadU64((PVOID)listHead, &node)) {
+        Out->DiagStatus = (UINT32)STATUS_ACCESS_VIOLATION;
+        return STATUS_SUCCESS;
+    }
+
+    for (hops = 0; node != 0 && hops < MYARK_WIN32K_EVENTHOOK_MAX_HOPS;
+         hops++) {
+        UCHAR raw[MYARK_WIN32K_EVENTHOOK_SIZE];
+        UINT64 next;
+
+        if (node < 0xFFFF800000000000ULL) {
+            break;                      // non-canonical next: stop list
+        }
+        if (!MyArkWin32kRead((PVOID)node, raw, sizeof(raw))) {
+            diag = STATUS_ACCESS_VIOLATION;
+            break;
+        }
+        next = *(UINT64*)(raw + MYARK_WIN32K_EVENTHOOK_OFF_NEXT);
+
+        if (Out->Count < MaxEntries) {
+            PMYARK_WIN32K_EVENTHOOK_ENTRY e = &Out->Entries[Out->Count];
+            e->Index = Out->Count;
+            e->EventMin = *(UINT32*)(raw + MYARK_WIN32K_EVENTHOOK_OFF_EMIN);
+            e->EventMax = *(UINT32*)(raw + MYARK_WIN32K_EVENTHOOK_OFF_EMIN
+                                     + 4);
+            e->FlagsInternal =
+                *(UINT32*)(raw + MYARK_WIN32K_EVENTHOOK_OFF_INTERNAL);
+            e->IdProcess =
+                *(UINT32*)(raw + MYARK_WIN32K_EVENTHOOK_OFF_IDPROCESS);
+            e->IdThread =
+                *(UINT32*)(raw + MYARK_WIN32K_EVENTHOOK_OFF_IDTHREAD);
+            // USER handle: 32-bit value, zero-extended (the
+            // upper dword of the field is always zero on 1903).
+            e->Handle = *(UINT32*)(raw + 0);
+            e->Callback = *(UINT64*)(raw + MYARK_WIN32K_EVENTHOOK_OFF_PROC);
+            e->Node = node;
+            Out->Count += 1;
+        } else {
+            Out->Truncated = 1;
+        }
+
+        node = next;
+    }
+
+    Out->DiagStatus = (UINT32)diag;
+    // Same in-band convention as 0x772/0x773: a fault mid-walk after rows
+    // were produced is a partial-but-useful enumeration.
+    if (diag == STATUS_ACCESS_VIOLATION && Out->Count > 0) {
+        Out->DiagStatus = (UINT32)STATUS_SUCCESS;
+    }
+    return STATUS_SUCCESS;
+}
+
 #endif // MYARK_MODULE_WIN32K

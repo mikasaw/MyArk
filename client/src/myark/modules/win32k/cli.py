@@ -6,6 +6,7 @@ Usage:
     myark-cli win32k enumerate-hooks
     myark-cli win32k handles [--type N]
     myark-cli win32k timers
+    myark-cli win32k event-hooks
 """
 
 from __future__ import annotations
@@ -107,6 +108,38 @@ def _cmd_timers(_args: argparse.Namespace) -> int:
                 pass
 
 
+def _cmd_event_hooks(_args: argparse.Namespace) -> int:
+    client = _open_or_complain()
+    try:
+        r = P.enum_eventhooks(client)
+        if r.gated:
+            print("# win32k event-hooks: build not calibrated "
+                  "(STATUS_NOT_IMPLEMENTED) -- informational")
+            return 0
+        diag = f" diag=0x{r.diag_status:08X}" if r.diag_status else ""
+        tr = f" truncated={r.truncated}" if r.truncated else ""
+        print(f"# win32k event-hooks: source={r.source} count={r.count}"
+              f" list_head=0x{r.list_head:X} session_base=0x{r.session_base:X}"
+              f" node_size=0x{r.node_size:X}"
+              f" gp_rva=0x{r.win_event_hooks_rva:X}{tr}{diag}")
+        for e in r.entries:
+            print(f"  [{e.index:3d}] h=0x{e.handle:X}"
+                  f" events=[0x{e.event_min:X}..0x{e.event_max:X}]"
+                  f" flags_i=0x{e.flags_internal:X}"
+                  f" pid=0x{e.id_process:X} tid=0x{e.id_thread:X}"
+                  f" cb=0x{e.callback:X}")
+        return 0
+    except (ValueError, ConnectionError, OSError) as exc:
+        print(f"!! win32k event-hooks: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+
 def _setup_cli(subparsers, _client=None) -> None:
     p_root = subparsers.add_parser(
         "win32k",
@@ -135,6 +168,12 @@ def _setup_cli(subparsers, _client=None) -> None:
         help="walk the session timer hash table (window/thread timers, R3-10b-iii)",
     )
     p4.set_defaults(_handler=_cmd_timers)
+
+    p5 = p_subs.add_parser(
+        "event-hooks",
+        help="walk the session WinEvent hook list (R3-10c)",
+    )
+    p5.set_defaults(_handler=_cmd_event_hooks)
 
 
 def _cmd_root(_args: argparse.Namespace) -> int:

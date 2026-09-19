@@ -2765,3 +2765,56 @@
   工作集裁剪 TOCTOU——类别与 1903 相同非新增，兜底仍是 reader
   迁移 MmCopyMemory（TODO 已列）。
 - 无新增阻塞。R3-10b-iv 全线收官；下一项 R3-10c WinEvent 钩子。
+
+---
+
+## 2026-09-20 — R3-10c 收官：0x774 WinEvent 钩子枚举（test2 / 1903 标定 + win11 门控）
+
+### 现象
+- 首轮 verify：0x774 基线 PASS（count=3，恰为会话内现存钩子），但
+  marker 匹配 0/3 → 两个独立原因：① verify 断言把**用户态回调**当
+  内核指针（要求 >0xFFFF800000000000，实际 0x1CA6BB50F50 是用户
+  VA）；② 修复后仍 0/3 的真因是 **guest 里 verify_core.py 没更新**
+  （vm_run_verify 不推脚本，只 vm_push_driver 推——上轮 push 在
+  .sys 锁文件失败后，脚本修复没随行）。
+- MUTTX err=1450 再现 = guest 长跑劣化（已知项），硬重置消失。
+
+### 与参考的对比
+- kd 20/20b/20c/20d 四轮标定（probe_winevent.py 注册 3 个可区分
+  (EventMin,EventMax,flags) 钩子）：
+  - **WinEvent 钩子就是 ahe 对象**：type=15（TYPE_WINEVENTHOOK），
+    kernel 记录 @8=属主 pid（与窗口行 @8=堆偏移语义不同），koff=0
+    → 非桌面堆驻留，0x772 可见其存在但拿不到过滤细节。
+  - **列表头 = win32kbase!gpWinEventHooks**（18363 RVA 0x219200），
+    指向最新注册节点；**单链 LIFO，next @+0x18，NULL 结尾**。
+  - **EVENTHOOK 布局（18363）**：+0x00 USER 句柄；+0x10 共享投递
+    对象；+0x18 next；+0x20 EventMin；+0x24 EventMax；+0x28 内部
+    flags（dwFlags 0x2/0x0 实测存 0x4/0x0）；+0x40 用户态回调；
+    +0x48 idProcess（0 登记为 0xFFFFFFFF）；+0x50 idThread；
+    节点 ≈0x60。
+  - 22631 门控保持（RVA 行 0），IOCTL 干净回
+    STATUS_NOT_IMPLEMENTED——与 0x773 同政策。
+- 标定教训：20 轮池搜索用了**上一 boot 的过期区段**全落空——
+  区段必须从本 boot 活值（aheList/w32kbase 符号地址）现推；20b
+  改为直接 `x win32kbase!g*vent*` 问符号空间，一轮命中。
+
+### 修复尝试
+- 0x774 全家桶：协议头（ENTRY 64B/头 56B）→ walker（profile 表+
+  单链走查+MAX_HOPS 环保护）→ ioctl handler → descriptor →
+  verify（marker 三钩子往返 + 22631 门控 skip）→ client
+  protocol/parser/cli（`win32k event-hooks`，未标定构建打印
+  informational 后干净返回）。
+
+### 关键决策回顾
+- **filter/callback 配对只在 EVENTHOOK 里可见**——0x772 的 type-15
+  行只证明"存在钩子"，0x774 才给出"监视什么、回调去哪、作用域"，
+  两者互补而非重复。
+- verify 断言教训固化：**回调/输出指针先分清用户态还是内核态再写
+  断言**；改完脚本必须重推（vm_push_driver 的 verify_core 推送在
+  .sys 之前，.sys 锁文件失败不影响脚本更新——但必须显式重推）。
+- CLI 冒烟的 myark_pkg.zip 是打包时间点的快照——**改客户端代码后
+  必须重打 zip**，否则 guest 跑的是旧包（"invalid choice" 假象）。
+
+### TODO
+- 22631 EVENTHOOK 差分标定（门控中）；CLI event-hooks 已端到端
+  冒烟（count=0 / gp_rva=0x219200 正确）。
