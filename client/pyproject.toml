@@ -64,6 +64,7 @@ wfp = "myark.modules.wfp:register"
 mutation = "myark.modules.mutation:register"
 redirect = "myark.modules.redirect:register"
 actions = "myark.modules.actions:register"
+kernel_object = "myark.modules.kernel_object:register"
 
 [dependency-groups]
 dev = [

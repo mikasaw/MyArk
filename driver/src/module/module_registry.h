@@ -10,7 +10,10 @@
 
 #include "module_descriptor.h"
 
-#define MYARK_MAX_MODULES 36
+// 36 slots were exactly exhausted when kernel_object (R3-4b) landed as the
+// 36th descriptor; 40 leaves headroom so the next module cannot silently
+// fall past the array sentinel.
+#define MYARK_MAX_MODULES 40
 
 extern MYARK_MODULE_DESCRIPTOR* g_AllModules[MYARK_MAX_MODULES + 1];
 extern UINT32 g_ModuleCount;

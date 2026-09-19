@@ -3098,6 +3098,156 @@ def verify_cidtable(handle, session_key: bytes | None) -> None:
             pass
 
 
+# ---------------------------------------------------------------------------
+# [KOBJ] R3-4b: kernel object namespace walk + named-pipe/mailslot IPC
+# summary (0x910 / 0x911). Read-only Zw-surface queries -- no session key
+# needed and no per-build profile: the assertions below must hold on every
+# supported build.
+# ---------------------------------------------------------------------------
+
+IOCTL_MYARK_KOBJ_ENUM_DIRECTORY = _ctl_code(FILE_DEVICE_UNKNOWN, 0x910, METHOD_BUFFERED, FILE_ANY_ACCESS)
+IOCTL_MYARK_KOBJ_IPC_SUMMARY = _ctl_code(FILE_DEVICE_UNKNOWN, 0x911, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+_KOBJ_NAME_MAX = 64
+_KOBJ_TYPE_MAX = 32
+_KOBJ_DIR_CAP = 256
+_KOBJ_PIPE_CAP = 256
+_KOBJ_MAILSLOT_CAP = 64
+_KOBJ_PATH_MAX = 96
+_KOBJ_ENTRY_SIZE = (_KOBJ_NAME_MAX + _KOBJ_TYPE_MAX) * 2
+_KOBJ_DIR_OUT_SIZE = 16 + _KOBJ_ENTRY_SIZE * _KOBJ_DIR_CAP
+_KOBJ_IPC_OUT_SIZE = 32 + _KOBJ_ENTRY_SIZE * (_KOBJ_PIPE_CAP + _KOBJ_MAILSLOT_CAP)
+
+
+def _kobj_dir_in(path: str) -> bytes:
+    raw = path.encode("utf-16-le")
+    payload = struct.pack("<II", len(path) + 1, 0) + raw
+    return payload + b"\x00" * ((_KOBJ_PATH_MAX * 2) - len(raw))
+
+
+def _kobj_entries(payload: bytes, offset: int, count: int) -> list:
+    rows = []
+    for i in range(count):
+        base = offset + i * _KOBJ_ENTRY_SIZE
+        name = payload[base:base + _KOBJ_NAME_MAX * 2].decode("utf-16-le").split("\x00")[0]
+        tname = payload[base + _KOBJ_NAME_MAX * 2:base + _KOBJ_ENTRY_SIZE] \
+            .decode("utf-16-le").split("\x00")[0]
+        rows.append((name, tname))
+    return rows
+
+
+def _kobj_query_directory(handle, path: str):
+    payload = _ioctl(handle, IOCTL_MYARK_KOBJ_ENUM_DIRECTORY, _kobj_dir_in(path),
+                     _KOBJ_DIR_OUT_SIZE)
+    count, flags, open_status, walk_status = struct.unpack_from("<IIII", payload, 0)
+    return count, flags, open_status, walk_status, _kobj_entries(payload, 16, count)
+
+
+def _kobj_ipc_summary(handle):
+    payload = _ioctl(handle, IOCTL_MYARK_KOBJ_IPC_SUMMARY, b"", _KOBJ_IPC_OUT_SIZE)
+    # Driver order: Pipe{Count,Flags,OpenStatus}, Mailslot{Count,Flags,
+    # OpenStatus}, PipeWalkStatus, MailslotWalkStatus (MyArkKernelObjectIoctl.h).
+    (pc, pf, pos, mc, mf, mos, pws, mws) = struct.unpack_from("<IIIIIIII", payload, 0)
+    pipes = _kobj_entries(payload, 32, pc)
+    mailslots = _kobj_entries(payload, 32 + _KOBJ_ENTRY_SIZE * _KOBJ_PIPE_CAP, mc)
+    return pc, pf, pos, pws, pipes, mc, mf, mos, mws, mailslots
+
+
+_KOBJ_WALK_CLEAN = {0x00000000, 0x80000006, 0x8000001A}
+
+
+def verify_kernel_object(handle) -> None:
+    _step("KOBJ object-directory walk + IPC summary (R3-4b)")
+
+    # 1. \ObjectTypes: the kernel-object summary must carry the core types.
+    count, flags, open_status, wst, rows = _kobj_query_directory(handle, "\\ObjectTypes")
+    names = {r[0] for r in rows}
+    core_types = {"Process", "Thread", "File", "Directory", "Mutant",
+                  "Section", "Device", "ALPC Port"}
+    check("KOBJ", "0x910 \\ObjectTypes: core object types present",
+          count >= 20 and not (flags & 1) and open_status == 0
+          and wst in _KOBJ_WALK_CLEAN and core_types.issubset(names),
+          "count=%d truncated=%d open=0x%08X walk=0x%08X missing=%s"
+          % (count, flags & 1, open_status, wst,
+             sorted(core_types - names)[:8] or "-"))
+
+    # 2. namespace root carries the standard directories.
+    count, _f, _o2, _w2, rows2 = _kobj_query_directory(handle, "\\")
+    root_names = {r[0] for r in rows2}
+    root_expected = {"Device", "ObjectTypes", "BaseNamedObjects",
+                     "KnownDlls", "KernelObjects", "Driver", "FileSystem"}
+    check("KOBJ", "0x910 \\: standard root directories present",
+          root_expected.issubset(root_names) and _w2 in _KOBJ_WALK_CLEAN,
+          "count=%d walk=0x%08X missing=%s"
+          % (count, _w2, sorted(root_expected - root_names)[:8] or "-"))
+
+    # 3. \Device carries the NPFS/MSFS roots as Device objects.
+    count, _f, _o3, _w3, rows3 = _kobj_query_directory(handle, "\\Device")
+    dev = {r[0].casefold(): r[1] for r in rows3}
+    check("KOBJ", "0x910 \\Device: NamedPipe + MailSlot present as Device",
+          "namedpipe" in dev and "mailslot" in dev
+          and dev.get("namedpipe") == "Device" and dev.get("mailslot") == "Device"
+          and _w3 in _KOBJ_WALK_CLEAN,
+          "count=%d walk=0x%08X NamedPipe=%s MailSlot=%s"
+          % (count, _w3, dev.get("namedpipe", "-"), dev.get("mailslot", "-")))
+
+    # 4. IPC summary (ZwQueryDirectoryFile on the NPFS/MSFS roots), with the
+    #    win32 pipe namespace (os.listdir on \\.\pipe\, same NPFS root) as
+    #    the user-mode ground truth. Transient pipes churn between the two
+    #    views -- tolerate a small symmetric difference.
+    pc, pf, pos, pws, pipes, mc, mf, mos, mws, mailslots = _kobj_ipc_summary(handle)
+    try:
+        win32_pipes = {n.casefold() for n in os.listdir("//./pipe/")}
+    except OSError:
+        win32_pipes = None
+    pipe_names = {r[0] for r in pipes}
+    known_pipes = {"ntsvcs", "scerpc", "lsass_ctrl_pipe", "InitShutdown",
+                   "W32TIME_ALT", "router"}
+    check("KOBJ", "0x911 IPC: pipes enumerated + known pipe member",
+          pos == 0 and pws in _KOBJ_WALK_CLEAN and pc >= 5 and not (pf & 1)
+          and known_pipes & pipe_names,
+          "pipes=%d truncated=%d open=0x%08X walk=0x%08X known_hit=%s"
+          % (pc, pf & 1, pos, pws, sorted(known_pipes & pipe_names)[:4] or "-"))
+    if win32_pipes is not None:
+        sym_diff = {n.casefold() for n in pipe_names} ^ win32_pipes
+        check("KOBJ", "0x911 IPC: pipe set matches win32 \\\\.\\pipe view",
+              len(sym_diff) <= 3,
+              "ipc=%d win32=%d diff=%s"
+              % (pc, len(win32_pipes), sorted(sym_diff)[:4] or "-"))
+    else:
+        check("KOBJ", "0x911 IPC: pipe set matches win32 \\\\.\\pipe view", False,
+              "os.listdir(//./pipe/) failed")
+    # MSFS may answer the root open/query with NO_MORE_FILES-family statuses
+    # when no mailslots exist; the walk must end cleanly and the count is
+    # informational (Server service mailslots can be absent on stripped VMs).
+    check("KOBJ", "0x911 IPC: mailslot walk ends cleanly",
+          mws in _KOBJ_WALK_CLEAN and mos in (0, 0x80000006, 0xC0000033)
+          and not (mf & 1),
+          "mailslots=%d truncated=%d open=0x%08X walk=0x%08X sample=%s"
+          % (mc, mf & 1, mos, mws, sorted(r[0] for r in mailslots)[:4] or "-"))
+
+    # 5. input validation: bad paths must be refused cleanly.
+    for label, bad_path in [("relative", "Device"),
+                            ("wildcard", "\\Device\\*"),
+                            ("empty", "")]:
+        try:
+            _ioctl(handle, IOCTL_MYARK_KOBJ_ENUM_DIRECTORY, _kobj_dir_in(bad_path),
+                   _KOBJ_DIR_OUT_SIZE)
+            ok = False
+            err = 0
+        except OSError as exc:
+            ok = True
+            err = exc.winerror if hasattr(exc, "winerror") else exc.errno
+        check("KOBJ", f"0x910 rejects {label} path", ok,
+              "path=%r err=%s" % (bad_path, err))
+
+    # 6. nonexistent directory: open failure reported in-band, IOCTL succeeds.
+    count6, _f6, open6, w6, _r6 = _kobj_query_directory(handle, "\\NoSuchDir_R34B")
+    check("KOBJ", "0x910 missing directory: clean in-band open failure",
+          count6 == 0 and open6 == 0xC0000034,
+          "count=%d open=0x%08X walk=0x%08X" % (count6, open6, w6))
+
+
 def verify_physical(handle) -> None:
     _step("PHYSICAL range filter + write gate (S6)")
     try:
@@ -3470,6 +3620,8 @@ MATRIX_READ_ONLY = [
     ("core", "SET_LOG_CONFIG", 0x804),
     ("hello", "PING", 0x900),
     ("hello", "GREET", 0x901),
+    ("kernel_object", "ENUM_DIRECTORY", 0x910),
+    ("kernel_object", "IPC_SUMMARY", 0x911),
     ("handle", "ENUM_PROCESS_HANDLES", 0xC00),
     ("handle", "QUERY_HANDLE", 0xC01),
     ("section", "QUERY_PROCESS", 0xC10),
@@ -4820,6 +4972,7 @@ def main() -> int:
         verify_kldr_diag(handle)
         verify_timerdpc(handle)
         verify_cidtable(handle, session_key)
+        verify_kernel_object(handle)
         verify_registry(handle, session_key)
         verify_hook_scan(handle)
         verify_hook_patch(handle, session_key)
@@ -4874,6 +5027,7 @@ def main() -> int:
         ("KLDRDIAG",  "(smoke) KLDR offset discriminator (R3-15 follow-up)"),
         ("TIMERDPC",  "(8h) timer/DPC enumeration (R3-3)"),
         ("CIDTBL",    "(8i) PspCidTable + hidden detection (R3-4)"),
+        ("KOBJ",      "(8j) object-directory walk + IPC summary (R3-4b)"),
         ("FILE",       "(5b) file R0 delete chain + query info"),
         ("MATRIX",     "(7) full IOCTL matrix (54 read-only + 8 mutating)"),
         ("DYNDATA",    "(smoke) dyndata read-only"),

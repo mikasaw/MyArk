@@ -211,6 +211,9 @@
     <ClCompile Include="src\modules\90_filemon\filemon_monitor.c" />
     <ClCompile Include="src\modules\90_filemon\filemon_ioctl.c" />
     <ClCompile Include="src\modules\90_filemon\filemon_descriptor.c" />
+    <ClCompile Include="src\modules\91_object\kernel_object_walker.c" />
+    <ClCompile Include="src\modules\91_object\kernel_object_ioctl.c" />
+    <ClCompile Include="src\modules\91_object\kernel_object_descriptor.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Trace.h" />
@@ -292,6 +295,8 @@
     <ClInclude Include="src\modules\89_file\file_descriptor.h" />
     <ClInclude Include="src\modules\90_filemon\filemon_internal.h" />
     <ClInclude Include="src\modules\90_filemon\filemon_descriptor.h" />
+    <ClInclude Include="src\modules\91_object\kernel_object_internal.h" />
+    <ClInclude Include="src\modules\91_object\kernel_object_descriptor.h" />
   </ItemGroup>
   <ItemGroup>
     <Inf Include="MyArkCore.inf" />

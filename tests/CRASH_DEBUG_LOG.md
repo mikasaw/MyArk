@@ -2070,3 +2070,80 @@
 2. KNOWN_ISSUES 落"ARP 改写仅 NSI 用户缓冲"行为差异声明（旧
    GetIpNetTable 路径与内核缓存不受影响）。
 3. 24H2 (26100+) 虚机仍缺——profile 表待第四行（环境项）。
+
+## 2026-09-19 — R3-4b 内核对象/IPC 摘要：kernel_object 模块落地 + METHOD_BUFFERED 别名/NPFS 根语义三连坑（test2 1903 + Win11 22631）
+
+### 现象
+- R3-4 遗留的"内核对象摘要 + IPC 摘要"立项为 91_object 模块（KOBJ，
+  0x910 ENUM_DIRECTORY / 0x911 IPC_SUMMARY），占位头
+  MyArkKernelObjectIoctl.h 与 myark_full.h 的 MYARK_MODULE_KERNEL_OBJECT
+  门早在 S4/S7 就预留好了。设计走全导出面（零 profile）：
+  对象目录用 ZwOpenDirectoryObject+ZwQueryDirectoryObject，IPC 用
+  ZwCreateFile+ZwQueryDirectoryFile。
+- 首轮 1903 实测：0x910 对 `\`、`\ObjectTypes`、`\NoSuchDir` 一律
+  open=0xC000003B（PATH_NOT_FOUND，与"空对象名"同码）；0x911 对
+  `\Device\NamedPipe`/`\Device\MailSlot` open=0xC0000024
+  （INVALID_PARAMETER）。
+
+### 与参考的对比
+- 宿主机 ntdll NtOpenDirectoryObject 对照（build/probe_ntdir.py）：
+  用户态 `\` 打开成功、`\NoSuchDir` 精确回 NAME_NOT_FOUND
+  （0xC0000034），`\ObjectTypes` 回 ACCESS_DENIED（用户态有权限检查，
+  内核 Zw 面 PreviousMode=Kernel 跳过）——同一名字内核侧回
+  PATH_NOT_FOUND 说明不是对象管理器语义，而是**传入名有问题**。
+- 结论链：`\NoSuchDir` 内核侧回 PATH_NOT_FOUND ≈ 空名/相对名的回码
+  （探针：空串→PATH_NOT_FOUND、"O"→PATH_NOT_FOUND）。
+
+### 修复尝试（按定位顺序）
+1. 临时诊断：把收到的输入前 16 字节原样回显到输出头 →
+   **raw=[00000000 ...] 全零**。根因：METHOD_BUFFERED 的 in_buf 与
+   out_buf 是**同一块 SystemBuffer**——handler 先
+   RtlZeroMemory(out_buf, 49KB) 把输入路径副本一起抹了（校验在抹零前
+   通过、走查在抹零后读路径→空名→PATH_NOT_FOUND）。修复：校验后先把
+   DirectoryPath 拷进局部 WCHAR[96]，再碰 out_buf。仓库级教训：
+   **所有"输入结构+大输出"的 METHOD_BUFFERED handler 都必须在写输出前
+   拷走输入**（registry/file 系列侥幸没踩：它们先读输入后写输出）。
+2. `\Device\NamedPipe`/`\Device\MailSlot` 是 NPFS/MSFS 的**设备对象**
+   而非对象目录——ZwOpenDirectoryObject 对它们回 INVALID_PARAMETER
+   （类型检查失败）。IPC 改走文件系统目录查询。
+3. 改后管道 open 成功但查询 0xC000000D。宿主机 NtCreateFile 矩阵
+   （build/probe_openmatrix.py）复现并锁定语义：**裸设备名 open =
+   控制设备句柄（建管道入口），不支持目录查询**；唯一可行组合 =
+   **尾部反斜杠根路径** `\Device\NamedPipe\` + DesiredAccess
+   FILE_LIST_DIRECTORY + CreateOptions FILE_OPEN_FOR_BACKUP_INTENT +
+   查询带非空模式 L"*"（NPFS 无默认模板）。MailSlot 同法
+   （`\Device\MailSlot\`）。
+4. 对象目录查询回 0xC0000023（BUFFER_TOO_SMALL）：
+   ZwQueryDirectoryObject 的单条记录**及其字符串必须放同一缓冲**，32 字节
+   的 OBJECT_DIRECTORY_INFORMATION 头不够 → 512 字节缓冲。另修复一处
+   低级错误：分配 512 却仍把 sizeof(结构)（32）当 Length 传。
+5. 诊断基建教训：guest 探针 win32 侧把 CTL_CODE 的 METHOD 位写成 2
+   （METHOD_OUT_DIRECT）导致全军 err=1——用户态 DeviceIoControl 的
+   METHOD_BUFFERED=0；驱动端永远收不到请求，别当驱动 bug 查。
+
+### 关键决策回顾
+- 零 profile 路线再次胜出：两 API 全导出、全构建同语义，1903/22631
+  同一份代码直绿（对比 R3-3/R3-4 的 Tier C 偏移钉版成本）。
+- 管道真值交叉用 `os.listdir('//./pipe/')`（同 NPFS 根的 win32 视图），
+  实测 1903 24==24、22631 51==51 零差异；瞬时管道抖动容忍
+  |对称差|<=3。
+- mailslot 枚举是 best-effort：MSFS 根为空/不可用时回
+  NO_MORE_FILES 族状态，verify 断言"走查干净结束 + 计数仅报告"，
+  不卡 >=1（Server 服务可被裁剪）。
+- ZwQueryDirectoryFile 多条批量（ReturnSingleEntry=FALSE）+ NextEntryOffset
+  链走查，比单条循环少往返；对象目录保持单条循环（带 RestartScan）。
+- 顺手把 MYARK_MAX_MODULES 36→40（第 36 个描述符恰好把数组占满）。
+
+### 结果
+- 1903 [VERIFY] OK：\ObjectTypes 67 类型、\ 56 项、\Device 256 项、
+  管道 24 条与 win32 视图零差异、拒绝路径 err=87、缺失目录带内
+  NAME_NOT_FOUND。
+- 22631 [VERIFY] OK：70 类型、65 项、管道 51 条零差异。
+- client：`myark object dir|types|ipc` 三命令；875 单测全绿。
+
+### TODO
+1. dyndata QUERY_HANDLE/FILE/OBJECT 26100 常量清点（原队列任务4）。
+2. KNOWN_ISSUES 落"ARP 改写仅 NSI 用户缓冲"行为差异声明（R3-1b 遗留）。
+3. 24H2 (26100+) 虚机仍缺——环境项。
+4. 若未来要"每类型对象计数"（PCHunter 式），需 ObTypeIndexTable
+   Tier C profile——本切片刻意不做。

@@ -69,6 +69,7 @@ _BUILTIN_MODULE_NAMES = (
     "keyboard",
     "debug_output",
     "device_audit",
+    "kernel_object",
 )
 
 

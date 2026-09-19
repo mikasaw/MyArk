@@ -117,6 +117,9 @@
 #if MYARK_MODULE_FILE_MONITOR
 #include "../modules/90_filemon/filemon_descriptor.h"
 #endif
+#if MYARK_MODULE_KERNEL_OBJECT
+#include "../modules/91_object/kernel_object_descriptor.h"
+#endif
 
 //
 // Compile-time module roster. Each MYARK_MODULE_<NAME> define lives in the
@@ -227,6 +230,9 @@ MYARK_MODULE_DESCRIPTOR* g_AllModules[MYARK_MAX_MODULES + 1] = {
 #endif
 #if MYARK_MODULE_FILE_MONITOR
     &g_MyArkModule_FileMonitor,
+#endif
+#if MYARK_MODULE_KERNEL_OBJECT
+    &g_MyArkModule_KernelObject,
 #endif
     NULL
 };

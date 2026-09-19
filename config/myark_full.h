@@ -1,5 +1,5 @@
 // MyArk build profile: full
-// All 32 modules enabled (1 core + 1 hello + 30 functional).
+// All 36 module gates enabled (1 core + 35 functional, incl. core/hello).
 // Default profile used by `make.bat full` and the default `make.bat` (no arg).
 
 #pragma once

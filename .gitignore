@@ -69,6 +69,7 @@ desktop.ini
 # local fleet credentials (real KDNET key / guest account / VM paths);
 # must come after the !/build/vm_*.bat whitelist above
 /build/vm_env_local.bat
+/build/vm_env_win11.bat
 
 # Local agent workspaces
 /.zcode/
