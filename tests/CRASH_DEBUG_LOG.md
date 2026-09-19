@@ -2206,3 +2206,61 @@
 2. dyndata QUERY_MODULE/QUERY_SSDT 的 26100 门控备查（KLDR/SSDT
    布局跨构建历史稳定，风险低）。
 3. 24H2 虚机（环境项）。
+
+## 2026-09-19 — R3-10b 前置：win32k 会话空间 KDNET 校准（test2 1903）——数据落袋，运行时基址锚点列为独立切片
+
+### 现象
+- R3-10b 需要 win32kbase 会话基址的运行时锚点（内核 gSharedInfo /
+  gptmrMaster 全局），走 KDNET 校准。
+- 校准四轮才成功：轮 1（explorer 上下文）符号全通但只查了符号名没
+  dump 数据；轮 2/3 改 python.exe（session 0 探针）上下文全废
+  （"Couldn't resolve" + lm 空）；轮 4 发现轮 2-4 共同根因：新 kd
+  会话没有 .sympath/.reload（符号路径为空，缓存 PDB 也不加载）。
+
+### 与参考的对比
+- 轮 3 选进程按"第一个 python.exe"取到 HandleCount=0 的僵尸进程
+  （session-0 win32k 根本未初始化，lm 连 win32k 模块都不列）——
+  会话驱动只在挂到该会话 GUI 进程上下文时可见。
+- session-0 探针（runProgramInGuest）SetTimer 不可用：session 0 非
+  GUI 进程无 win32k；vmrun 1.17 的 -interactive 旗标报
+  "Invalid argument"（帮助文本泛化，Workstation 实现不支持）；
+  schtasks /it 被 session-0 过滤令牌拒绝——三路 session-1 投递
+  全堵，最终用 explorer（session 1）自身的系统定时器做对象来源。
+
+### 修复尝试 / 校准结果（test2 18363, win32kbase 基址 ffff8562`07ab0000）
+- 内核 gSharedInfo = win32kbase+0x213750（ffff8562`07cc3750）：
+  psi = ffff8525`c0e01040（会话池，非模块内！）、**内核 aheList =
+  ffff8525`c0c00000**（真句柄表，pHead 未抹零）、HeEntrySize = 0x20。
+- gptmrMaster = win32kbase+0x215938（USER 定时器主锚点 TIMER 对象，
+  @0 = LIST_ENTRY 链入全体 TIMER）。
+- gTimerHashTable（+0x215de0）/ gTimerId（+0x21561e0-基址）存在。
+- WinEvent 钩子：gpeg*/gEventHook* 在 win32k* 三模块均无符号
+  （列表挂 DESKTOP 内部，需 DESKTOPINFO 偏移，更重）。
+
+### 关键决策回顾
+- R3-10b 实现的真正阻塞点收敛为**一个问题**：运行时如何定位
+  win32kbase 会话基址。psi 在会话池（非模块内，派生不了基址）；
+  会话驱动不在 PsLoadedModuleList；候选：①shadow SSDT 已给出
+  win32k.sys 基址（R2-3 现成代码）→ 其 IAT 里有 win32kbase 导出
+  函数指针 → 基址 = 指针 - 标定 RVA（每构建 2 个常量）；②
+  EPROCESS.Session → MM_SESSION_SPACE 会话驱动链（Tier C 更深）。
+  两者都是独立验证轮的量级——按"不做半成品"纪律拆为独立切片，
+  本轮只落数据。
+- KDNET 教训新增：**每个新 kd 会话都要完整走 .sympath + .reload**
+  （符号缓存不等于符号路径）；!process 输出选 EPROCESS 必须核对
+  HandleCount 非零（僵尸进程上下文会让会话模块整体隐身）。
+- guest 定时器探针三路投递失败的全记录（session-0 无 win32k、
+  -interactive 不支持、/it 拒绝）——后人勿再踩。
+
+### 结果
+- 全部标定数据落袋（本段 + build/kd_win32k_calib*_out.txt 本地留存，
+  脚本不入库）。R3-10a 本体不受影响（已收官）。
+- 1903 [VERIFY] OK、22631 [VERIFY] OK（R3-10a 提交后复验态）。
+
+### TODO
+1. R3-10b-i：win32kbase 会话基址锚点切片（shadow SSDT+IAT 或
+   MM_SESSION_SPACE 路线，先验证再实现）。
+2. R3-10b-ii：内核句柄表 pHead 补齐 + gptmrMaster 定时器枚举
+   （RVA 已备：0x213750 / 0x215938，需 22631 对应行）。
+3. WinEvent 钩子：DESKTOPINFO 偏移链，工作量另估。
+4. dyndata QUERY_MODULE/QUERY_SSDT 26100 门控备查；24H2 虚机。
