@@ -301,10 +301,17 @@ typedef struct _MYARK_WIN32KBASE_PROFILE {
 static const MYARK_WIN32KBASE_PROFILE g_MyArkWin32kBaseProfiles[] = {
     // KDNET-calibrated 2026-09-19 (rounds 8/18c)
     { 18362, 18363, 0x213750, 0x800 },
-    // 22631: gSharedInfo RVA calibrated (round 8); the heap-base scan
-    // was NOT re-derived there (W32PROCESS layout differs -- see
-    // R3-10b-iv notes), so derivation stays gated off.
-    { 22621, 22631, 0x285e80, 0 },
+    // 22631: gSharedInfo RVA calibrated (round 8). The HeapScanBytes
+    // window was never KDNET-calibrated -- it was validated live: the
+    // per-row hdr self-check keeps the output honest (bit1 only sets on
+    // a proven row) and the guarded reader carries the memory safety,
+    // so the verify suite doubles as the calibration probe. Measured
+    // 22631: desktop heaps live in a different region than 1903 (high
+    // kernel VA, not session pool) -- the region-agnostic candidate
+    // filter adapts; 696 rows validated. rsv2 failure crumbs
+    // 0x111/0x112/0x113/0x114 (see MyArkWin32kIoctl.h); bit1 set with
+    // rsv2 0 = proven derivation.
+    { 22621, 22631, 0x285e80, 0x800 },
 };
 
 static const MYARK_WIN32KBASE_PROFILE*

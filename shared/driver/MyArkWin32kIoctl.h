@@ -142,8 +142,9 @@ typedef struct _MYARK_WIN32K_USER_HANDLES_OUTPUT {
                                                  // 0x12 no structural candidate,
                                                  // 0x13 candidates but 0 rows
                                                  // validated, 0x14 scan aborted);
-                                                 // 0x0 when heap scan is gated
-                                                 // off for this build
+                                                 // 0x0 = scan not run (no
+                                                 // profile row) or derivation
+                                                 // proven (see PsiMatch bit1)
     MYARK_WIN32K_USER_HANDLE_ENTRY Entries[MYARK_WIN32K_HANDLE_CAP];
 } MYARK_WIN32K_USER_HANDLES_OUTPUT, *PMYARK_WIN32K_USER_HANDLES_OUTPUT;
 

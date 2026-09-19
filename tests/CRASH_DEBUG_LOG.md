@@ -2724,3 +2724,44 @@
 - MUTTX `PREPARE err=1450` 在脏 guest 上偶发、干净重启后消失——
   若复现再查 R3-8 事务池。
 - `MmIsAddressValid` 仓库级加固（B4，需值守窗口）；win32k reader 现与 dyndata/callback 同为 MmIsAddressValid 门控裸读（且扫描面每调用解引用数千个不可信候选值），是 B4 式迁移 `MmCopyMemory` 的下一顺位候选。
+
+---
+
+## 2026-09-20 — R3-10b-iv 收尾：22631 堆链免 kd 标定（win11 / 22631 + test2 回归）
+
+### 现象
+- 22631 profile 解除 `HeapScanBytes=0` 门控（置 0x800）后仅一轮
+  verify：`psi_match=2`、**696 行 canonical kobj**、P3-4 窗口行
+  canonical（kobj=0xfffff8005c636fe0），[VERIFY] OK；test2 同二进制
+  回归 [VERIFY] OK（本轮拉回件实证 43 行——行数随 boot 波动，以工件为准）。
+
+### 与参考的对比
+- 上一步 kd 18c 证明该扫描在 1903 上成立；22631 的疑点是桌面堆
+  **不在 fffafd1 会话池区段而在 0xFFFFF800`5C 区段**（内核映像上方
+  的高地址区）——固定区段门会失效，本扫描只有 canonical/同 256MB
+  区/形状约束，跨段自适应。
+- 标定方式对比：R3-10b-iii 的 22631 差分需要专用 kd 轮（结构异构
+  实锤才关门）；本轮因**每行 hdr 自检兜底**，门控解除本身即安全
+  实验——verify 就是标定探针（bit1=0 时 rsv2 面包屑给失败原因），
+  免 kd 轮。
+
+### 修复尝试
+- 仅 profile 一行 + 注释（无代码路径变化）；win11 走
+  svc_clean→push→vm_win11_verify 提权流。
+
+### 关键决策回顾
+- **自验证式设计的红利**：候选永不产错行、bit1 只认实证行，所以
+  "未标定"与"已标定"的差距只是信息性问题——可以放心让 verify
+  当第一轮标定器，kd 只留作失败归因工具（rsv2=0x12/0x13/0x14 时）。
+- 大文件截断拉取（win11 拉回件 473 行，不含全部正文）不影响判定：
+  token 化 verdict 通道给 [VERIFY] OK，堆细节行恰在拉回件内，
+  guest 侧 powershell 小文件提取佐证（build/diag_guest11.cmd +
+  run_diag11.cmd，本地不入库）。22631 桌面堆区段表述以实测
+  kobj/kern_ahe 落点（0xFFFFF800`5A/5C）为准，不做空间定位推断。
+
+### TODO
+- 解控残余暴露声明（评审 P3-2）：MmIsAddressValid 只校验首字节
+  所在页，候选 32B 读与 chunk 读可跨邻页、PASSIVE_LEVEL 下存在
+  工作集裁剪 TOCTOU——类别与 1903 相同非新增，兜底仍是 reader
+  迁移 MmCopyMemory（TODO 已列）。
+- 无新增阻塞。R3-10b-iv 全线收官；下一项 R3-10c WinEvent 钩子。

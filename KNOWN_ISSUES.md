@@ -163,7 +163,11 @@ MyArk v1.0.0 已知问题、限制、兼容性、性能、安全清单。
   脏契约一并修复); 双 build 1903/22631 全绿。范围外残留:
   10_process / 11_thread / 12_memory 等模块的 MmIsAddressValid 门控
   裸读 (descriptor / Limit / Base 等生命周期常驻目标), 候选后续
-  加固项。
+  加固项。2026-09-20 起 77_win32k 的 MyArkWin32kRead 亦为同模式
+  (内核地址 MmIsAddressValid 门 + 用户地址 __try), 且 0x772 堆
+  候选扫描使其成为解引用面最大的一处 (解对象为不可信候选值,
+  跨页/TOCTOU 残余见 tests/CRASH_DEBUG_LOG.md 2026-09-20 条),
+  加固顺位第一位。
 
 ---
 
