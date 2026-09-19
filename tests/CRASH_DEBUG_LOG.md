@@ -2608,3 +2608,24 @@
 - 结论：需要先系统化差分 THREADINFO/DESKTOP 布局（找 pDeskInfo/
   pDesktop 字段），再推堆基址。kd 轮 16a-16f 的 dump 数据已在
   build/kd_heap_calib16*_out.txt 留存，供下一轮离线分析。
+
+### 追记（16g/16h 轮）：堆基址 B 自证定位成功 + 运行时存储点仍未找到
+- **B 自证法（有效，推广可用）**：内核 aheList 三窗口行
+  (0x10004@0x10d0 / 0x10006@0x1340 / 0x10008@0x1520)，对会话池
+  扫 dword 0x00010004 的 10 个命中逐个试 B=hit-0x10d0，要求同时
+  *(B+0x1340)&0xFFFFFFFF==0x10006 与 *(B+0x1520)==0x10008——唯一
+  通过：**B=0xFFFFAFD140FC0000**（本 boot 会话 1 Default 桌面堆
+  内核基址）。
+- **存储点负结果**：B 的 qword 在会话池 96MB 全扫 0 命中——堆基址
+  不以 qword 形式物化在会话池（存在 DESKTOP 内核对象/编码存储/
+  全局表，待查）。psi±1MB / W32PROCESS±64KB / THREADINFO±64KB
+  亦无。
+- explorer 首线程 Tcb.Win32Thread 指向的内容是代码段（dt 提取疑
+  有误或该线程非 GUI），THREADINFO 差分必须改用**确认有窗口的
+  GUI 线程**（用 aheList 里 type=1 行的 pti 交叉核对，而非盲取
+  第一个线程）。
+- 下一轮收口路径：GUI 线程 THREADINFO 全量 dump → 指针归零
+  （目标落在堆区间 [B, B+heapsize] 的字段 = pDeskInfo）→ 定位
+  pDeskInfo 偏移 F 与 DESKTOPINFO→自基址关系 → 驱动运行时链 =
+  PsGetThreadWin32Thread→TI[F]→base。PsGetThreadWin32Thread 为
+  ntoskrnl 导出。
