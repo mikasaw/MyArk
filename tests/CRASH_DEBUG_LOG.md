@@ -2629,3 +2629,25 @@
   pDeskInfo 偏移 F 与 DESKTOPINFO→自基址关系 → 驱动运行时链 =
   PsGetThreadWin32Thread→TI[F]→base。PsGetThreadWin32Thread 为
   ntoskrnl 导出。
+
+### 追记（16g-16k 轮）：堆基址 B 自证定位成功 + 运行时链闭合
+- **B 自证法（有效，推广可用）**：内核 aheList 三窗口行
+  (0x10004@0x10d0 / 0x10006@0x1340 / 0x10008@0x1520)，对会话池扫
+  dword 0x00010004 的 10 命中逐个试 B=hit-0x10d0，要求同时
+  *(B+0x1340)低32==0x10006 且 *(B+0x1520)==0x10008——唯一通过：
+  **B=0xFFFFAFD140FC0000**（本 boot 会话 1 Default 桌面堆内核视图）。
+- **桌面堆结构确认（可重定位堆设计）**：对象首 qword=句柄、次
+  qword=自身堆偏移；内部指针全部为堆内偏移（0x10d0 的 +0x68=
+  0x1340 = 窗口链指向下一窗口）。
+- **运行时存储**：B 不存于会话池/psi/W32PROCESS 头部；存于内核池
+  ffffb28d`60ee3890（视图描述符 {obj, B, 0x30000}），且
+  **W32PROCESS+0x7f8 → 0xffffb28d`60ee38b8**（= 描述符内 B+0x28）。
+  另 W32PROCESS+0x150 → 60ee3bf0 桌面视图对象（多视图基址
+  41200000/42600000，view+0x78 = 0x1400000 尺寸）。
+- **驱动实现方案（自验证）**：caller 上下文 W32P[0x7f8]→desc，
+  B=*(desc-0x28)（守卫读）；每窗口行 kobj=B+rec@0 后守卫读回，
+  低 32 位==句柄才填充——错基址不可能产错行。偏移 0x7f8/-0x28 按
+  build 入 profile。
+- **kd 运维坑**：`x win32kbase!gSharedInfo` 的 re.match 会因多行
+  响应首行为 Command 回显而失配——必须逐行匹配；lm 输出会间歇
+  截断（改 x 拿符号地址）。
