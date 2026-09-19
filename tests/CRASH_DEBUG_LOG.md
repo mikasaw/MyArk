@@ -2548,3 +2548,54 @@
   有现象时执行。基线解析/64 桶走查/KillTimer 全 ACK 保持严格。
 - 顺带落实评审 P2：0x773 进 MATRIX_READ_ONLY（计数标签 48→58 修正，
   旧标签本就过期）；CLI handles/timers 头行输出 truncated。
+
+## 2026-09-19 晚 — R3-10b-iv 前置：22631 定时器判决轮（关闭）+ desktop-heap 推导第一链（test2 1903 + Win11 22631，KDNET 轮 13-16e）
+
+### 现象
+- 22631 判决轮：token 防陈旧探针存活下，在**正确的**节点区域
+  （ffffcb0d`6e-6f，由 gTimerHashTable 实际链头推导）扫 Usmt tag
+  （0x746d7355）与明文 elapse（0x1B7740），256MB 窗口均零命中。
+- desktop-heap 推导（1903）：W32PROCESS 内全部 ffffafd1`40-46 区
+  指针（+0x20/0x58/0xc0/0xc8/0xd0/0xd8/0xe0/0xe8/0x100/0x140/
+  0x148/0x158/0x160/0x170/0x178）逐一作为堆基址候选验证
+  （pHead=B+rec@0 的首 qword 应等于窗口句柄）——全部 0/4。
+
+### 与参考的对比
+- 22631：gTimerHashTable 的链语义本身有效（Flink/Blink 自洽），
+  但链上对象带 "Wnf "/"Ntfc"/"Rspp" 等杂 tag 且无 Usmt、无明文
+  elapse——定时器对象在该 build 换了 tag/编码（同 R3-3 DPC 值
+  编码一类）。**0x773 门控维持，此项关闭**。
+- 1903 desktop-heap 第一链已通：`dt nt!_EPROCESS <ep> Win32Process`
+  = **+0x3b0**，explorer W32PROCESS=ffffafd1`4582d010（+0x00 回指
+  EPROCESS ✓）。psi=ffffafd1`40E01040、内核 aheList=ffffafd1`
+  40C00000（会话池区域 = ffffafd1`40-46）。TYPE_WINDOW 内核行
+  rec@0 = 0x10d0/0x1340/0x1520（随句柄递增的堆偏移，WND 尺寸
+  ~0x1e0-0x270 合理）。
+- 跨进程验证：explorer 与 dwm 的 W32PROCESS+0xa0/a8/b0 三指针
+  完全一致（ffffaf88`c603c7a0 区）——但该区在 win32kbase **镜像**
+  内，是会话全局数据非堆基址（假候选已排除）。
+
+### 修复尝试 / 关键决策回顾
+- 池搜索语法：`s -d <start> L?count <value>`（范围在前）；kd dq
+  输出解析必须排除行地址列（首列混入值列表导致 +2 错位）。
+- lm 输出会间歇性截断（只剩表头）——改用
+  `x win32kbase!gSharedInfo` 拿符号地址（首 token=地址，稳定），
+  且**每个新 kd 会话都必须先 .reload /f win32kbase.sys**（16c 两轮
+  因漏 .reload 符号全失）。re.match 不可用于多行响应——逐行匹配。
+- W32PROCESS+0xa0/a8/b0 三指针跨进程一致曾误判为堆基址——用
+  win32kbase 镜像区间过滤即排除；真堆基址不在 W32PROCESS 内。
+- 下一步正确锚点：**DESKTOP 对象**（W32THREAD→pDesktop 或
+  WindowStations 目录→DESKTOP），DESKTOP 内含桌面堆基址字段；
+  ETHREAD→KTHREAD.Win32Thread 有符号偏移可直达 W32THREAD。
+
+### 结果
+- 22631 定时器差分标定正式关闭（结构异构实锤，0x773 门控维持）。
+- desktop-heap 推导完成第一链（W32PROCESS 锚点 + 会话池区域定位 +
+  候选排除法），堆基址字段的最终定位（DESKTOP 对象锚）留下一轮。
+
+### TODO
+1. W32THREAD→pDesktop→DESKTOP→堆基址字段定位（1903 一轮 kd）。
+2. 22631 同链复核（若 1903 通，22631 大概率同构）。
+3. 驱动实现：PsGetProcessWin32Process/PsGetThreadWin32Thread（运行
+   时 MmGetSystemRoutineAddress）+ 每行 KernelObject = base + rec@0。
+4. verify：0x772 内核行 kobj 非零且落在堆区间断言。
