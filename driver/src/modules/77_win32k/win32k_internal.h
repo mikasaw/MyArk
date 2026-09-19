@@ -54,4 +54,14 @@ MyArkWin32kEnumUserHandles(
     _Out_ PMYARK_WIN32K_USER_HANDLES_OUTPUT Out,
     _In_  ULONG                             MaxEntries);
 
+//
+// R3-10b-iii: walk the session timer hash table (win32kbase!
+// gTimerHashTable) in the caller's session context. Same contract as
+// above: read-only, guarded reads, in-band DiagStatus.
+//
+NTSTATUS
+MyArkWin32kEnumTimers(
+    _Out_ PMYARK_WIN32K_TIMERS_OUTPUT Out,
+    _In_  ULONG                       MaxEntries);
+
 #endif

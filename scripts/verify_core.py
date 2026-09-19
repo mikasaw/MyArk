@@ -3350,8 +3350,9 @@ def verify_win32k_handles(handle) -> None:
     new_indexes = set()
     if ok_created:
         probe_idx = sorted(h & 0xFFFF for h in probe_handles)
-        count2, diag2, _s2, _a2, _h2, _sc2, _tr2, rows2 = (
-            lambda *a: a[:7] + (a[12],))(*_win32k_enum_handles(handle))
+        res2 = _win32k_enum_handles(handle)
+        count2, diag2, _s2, _a2, _h2, _sc2, _tr2 = res2[:7]
+        rows2 = res2[12]
         live2 = {r[0] for r in rows2}
         new_indexes = live2 - set(live)
         # The created handle's low 16 bits MUST be the table slot index
@@ -3368,13 +3369,263 @@ def verify_win32k_handles(handle) -> None:
     if ok_created:
         for h in probe_handles:
             user32.DestroyAcceleratorTable(h)
-        count3, diag3, _s3, _a3, _h3, _sc3, _tr3, rows3 = (
-            lambda *a: a[:7] + (a[12],))(*_win32k_enum_handles(handle))
+        res3 = _win32k_enum_handles(handle)
+        count3, diag3, _s3, _a3, _h3, _sc3, _tr3 = res3[:7]
+        rows3 = res3[12]
         live3 = {r[0] for r in rows3}
         still_there = new_indexes & live3
         check("WIN32K", "0x772 probe: destroyed accelerators gone again",
               diag3 == 0 and len(still_there) == 0,
               "still_live=%s diag3=0x%08X" % (sorted(still_there)[:5], diag3))
+
+
+# ---------------------------------------------------------------------------
+# [WIN32K 0x773] R3-10b-iii: session timer hash table (win32kbase!
+# gTimerHashTable). Ground truth same pattern as the accel probe: plant
+# window timers with known ids, require them as rows, kill them, require
+# them gone. This ALSO re-validates the KDNET-calibrated TIMER node
+# offsets on every build -- a layout drift fails the marker decode check
+# instead of yielding silently wrong rows.
+# ---------------------------------------------------------------------------
+
+IOCTL_MYARK_WIN32K_ENUM_TIMERS = _ctl_code(FILE_DEVICE_UNKNOWN, 0x773, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+_WIN32K_TIMER_CAP = 256
+_WIN32K_TIMER_ENTRY_SIZE = 48   # C natural alignment: 4×UINT32 + 4×UINT64
+# NOTE: the 0x773 C header is 64 bytes (40B fixed + TimerHashRva + 3×rsv),
+# NOT 72 like 0x772 -- an 8-byte slip here shifts EVERY entry field by one
+# slot and the markers "disappear" while the lifecycle still tracks.
+_WIN32K_TIMERS_OUT_SIZE = 64 + _WIN32K_TIMER_ENTRY_SIZE * _WIN32K_TIMER_CAP
+
+
+def _win32k_enum_timers(handle):
+    payload = _ioctl(handle, IOCTL_MYARK_WIN32K_ENUM_TIMERS, b"",
+                     _WIN32K_TIMERS_OUT_SIZE)
+    (count, diag, hash_table, session_base, buckets, node_size,
+     scanned, truncated) = struct.unpack_from("<IIQQIIII", payload, 0)
+    timer_rva, _rsv2, _rsv3, _rsv4 = struct.unpack_from("<QIIQ", payload, 40)
+    rows = []
+    for i in range(count):
+        base = 64 + i * _WIN32K_TIMER_ENTRY_SIZE
+        idx, tid, elapse, flags = struct.unpack_from("<IIII", payload, base)
+        pti, proc, window, node = struct.unpack_from("<QQQQ", payload, base + 16)
+        rows.append((idx, tid, elapse, flags, pti, proc, window, node))
+    return (count, diag, hash_table, session_base, buckets, node_size,
+            scanned, truncated, timer_rva, _rsv2, rows)
+
+
+def verify_win32k_timers(handle) -> None:
+    # 0x773 is build-gated in the driver: only builds with a differential
+    # TIMER calibration (18362/18363) serve rows; others answer with
+    # DiagStatus = STATUS_NOT_IMPLEMENTED / Count = 0 and the suite
+    # records an explicit skip instead of failing.
+    _step("WIN32K timer hash table + marker probe (R3-10b-iii)")
+    try:
+        res = _win32k_enum_timers(handle)
+    except OSError as exc:
+        check("WIN32K", "0x773 timer enum availability probe", False, str(exc))
+        return
+    if res[1] == _STATUS_NOT_IMPLEMENTED:  # build ungated in the driver
+        skip("WIN32K", "0x773 timer walk (build not calibrated)",
+             "driver refuses ungated builds; see CRASH_DEBUG_LOG R3-10b-iii")
+        return
+    user32 = ctypes.WinDLL("user32")
+    k32 = ctypes.WinDLL("kernel32")
+
+    class WNDCLASSW(ctypes.Structure):
+        _fields_ = [("style", ctypes.c_uint),
+                    ("lpfnWndProc", ctypes.c_void_p),
+                    ("cbClsExtra", ctypes.c_int),
+                    ("cbWndExtra", ctypes.c_int),
+                    ("hInstance", ctypes.c_void_p),
+                    ("hIcon", ctypes.c_void_p),
+                    ("hCursor", ctypes.c_void_p),
+                    ("hbrBackground", ctypes.c_void_p),
+                    ("lpszMenuName", ctypes.c_void_p),
+                    ("lpszClassName", ctypes.c_wchar_p)]
+
+    class MSG(ctypes.Structure):
+        _fields_ = [("hwnd", ctypes.c_void_p), ("message", ctypes.c_uint),
+                    ("wParam", ctypes.c_size_t), ("lParam", ctypes.c_longlong),
+                    ("time", ctypes.c_uint), ("pt_x", ctypes.c_long),
+                    ("pt_y", ctypes.c_long)]
+
+    WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_longlong, ctypes.c_void_p,
+                                 ctypes.c_uint, ctypes.c_size_t,
+                                 ctypes.c_longlong)
+
+    user32.DefWindowProcW.restype = ctypes.c_longlong
+    user32.DefWindowProcW.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                      ctypes.c_size_t, ctypes.c_longlong]
+
+    def _wndproc(hwnd, msg, wparam, lparam):
+        return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+    wndproc_cb = WNDPROC(_wndproc)      # keep ref alive (the window uses it)
+
+    user32.RegisterClassW.restype = ctypes.c_ushort
+    user32.RegisterClassW.argtypes = [ctypes.c_void_p]
+    user32.CreateWindowExW.restype = ctypes.c_void_p
+    user32.CreateWindowExW.argtypes = [
+        ctypes.c_ulong, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+    user32.SetTimer.restype = ctypes.c_size_t
+    user32.SetTimer.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
+                                ctypes.c_uint, ctypes.c_void_p]
+    user32.KillTimer.restype = ctypes.c_int
+    user32.KillTimer.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    user32.DestroyWindow.restype = ctypes.c_int
+    user32.DestroyWindow.argtypes = [ctypes.c_void_p]
+    user32.PeekMessageW.restype = ctypes.c_int
+    user32.PeekMessageW.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                    ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
+    user32.TranslateMessage.restype = ctypes.c_int
+    user32.TranslateMessage.argtypes = [ctypes.c_void_p]
+    user32.DispatchMessageW.restype = ctypes.c_longlong
+    user32.DispatchMessageW.argtypes = [ctypes.c_void_p]
+    k32.GetModuleHandleW.restype = ctypes.c_void_p
+    k32.GetModuleHandleW.argtypes = [ctypes.c_wchar_p]
+    k32.GetCurrentProcessId.restype = ctypes.c_uint32
+
+    def drain_queue():
+        msg = MSG()
+        while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+
+    wc = WNDCLASSW()
+    wc.lpfnWndProc = ctypes.cast(wndproc_cb, ctypes.c_void_p).value
+    wc.hInstance = k32.GetModuleHandleW(None)
+    wc.lpszClassName = "MyArkVerifyTimers"
+    atom = user32.RegisterClassW(ctypes.byref(wc))
+    hwnd = None
+    if atom:
+        hwnd = user32.CreateWindowExW(0, "MyArkVerifyTimers",
+                                      "MyArkVerifyTimers", 0,
+                                      0, 0, 0, 0, None, None,
+                                      wc.hInstance, None)
+    ok_window = bool(hwnd)
+    check("WIN32K", "0x773 probe setup: marker window created", ok_window,
+          "atom=0x%04X hwnd=%s" % (atom or 0, hex(hwnd or 0)))
+
+    # Deterministic probe design (KDNET-calibrated semantics, calib11): a
+    # TIMER node is hash-linked while armed-and-not-yet-fired; a fire
+    # unlinks it (permanently, unless the queue is drained). So the
+    # markers use a 60 s elapse -- the whole verification window stays
+    # pre-fire, i.e. stably hash-linked -- and pid-derived ids, so leaked
+    # timer nodes from earlier runs can never collide with this run.
+    marker_ids = [0x8000 + (k32.GetCurrentProcessId() & 0x3FF) * 8 + i * 8
+                  for i in range(5)]
+    created = 0
+    if ok_window:
+        for tid in marker_ids:
+            if user32.SetTimer(hwnd, tid, 60000, None):
+                created += 1
+    check("WIN32K", "0x773 probe setup: 5 marker timers armed",
+          created == 5, "created=%d ids=%s" % (created, [hex(t) for t in marker_ids]))
+
+    # Hash insertion of a fresh TIMER node is driven by the thread's queue
+    # activity (KDNET-proven: a silent thread leaves nodes unlinked past
+    # 1 s; a pumping GUI thread links them within the first ticks). Pump
+    # briefly -- with a 60 s elapse nothing can fire+unlink in this window.
+    for _ in range(15):
+        time.sleep(0.1)
+        drain_queue()
+
+    res = _win32k_enum_timers(handle)
+    count, diag, hash_table, session_base, buckets, node_size, \
+        scanned, truncated, timer_rva, rsv2, rows = res
+    check("WIN32K", "0x773 baseline: gTimerHashTable resolved + buckets walked",
+          diag == 0 and hash_table > 0xFFFF800000000000
+          and session_base > 0xFFFF800000000000 and buckets == 64
+          and node_size == 0xA0,
+          "count=%d diag=0x%08X hash=0x%X base=0x%X buckets=%d node=0x%X"
+          " scanned=%d rva=0x%X stage=%d"
+          % (count, diag, hash_table, session_base, buckets, node_size,
+             scanned, timer_rva, rsv2))
+
+    # gTimerHashTable membership churns per build (KDNET rounds 10-12:
+    # nodes link/unlink across ticks even while armed; 1903 showed 2-4/5,
+    # 22631 as few as 1/5), so poll briefly and take the peak. Any
+    # sighting of a pid-derived id is a true positive.
+    def _marker_snapshot():
+        rows_n = _win32k_enum_timers(handle)
+        by_id = {}
+        for r in rows_n[10]:
+            by_id.setdefault(r[1], []).append(r)
+        marker_rows_n = [by_id.get(t, []) for t in marker_ids]
+        return (sum(1 for lst in marker_rows_n if lst), marker_rows_n,
+                rows_n[0])
+
+    best_found, best_rows, count = _marker_snapshot()
+    best_decode = best_rows if best_found >= 1 else None
+    for _ in range(3):
+        if best_found >= 2:
+            break
+        time.sleep(0.7)
+        drain_queue()
+        found, marker_rows, _n = _marker_snapshot()
+        if found > best_found:
+            best_found, best_rows = found, marker_rows
+        if best_decode is None and found >= 1:
+            best_decode = marker_rows
+    check("WIN32K", "0x773 probe: armed marker timers visible as rows (>=1/5)",
+          best_found >= 1,
+          "markers=%d/5 total_rows=%d (system timers included)"
+          % (best_found, count))
+
+    if best_decode:
+        elapses = set()
+        ptis = set()
+        windows = set()
+        for lst in best_decode:
+            if lst:
+                elapses.add(lst[0][2])
+                ptis.add(lst[0][4])
+                windows.add(lst[0][6])
+        # Every visible marker shares one thread (pti) and one window (the
+        # probe window); the window timer must carry a NON-null window
+        # while the elapse round-trips the SetTimer argument.
+        check("WIN32K",
+              "0x773 marker rows decode consistently (elapse/pti/window)",
+              elapses == {60000} and len(ptis) == 1 and 0 not in ptis
+              and len(windows) == 1 and 0 not in windows,
+              "elapses=%s ptis=%s windows=%s"
+              % (sorted(elapses), sorted(hex(p) for p in ptis),
+                 sorted(hex(w) for w in windows)))
+
+    if created == 5:
+        # KillTimer can return FALSE for a node that is currently unlinked
+        # (membership churn); retry until every timer reports killed.
+        remaining = set(marker_ids)
+        for _ in range(20):
+            for tid in sorted(remaining):
+                if user32.KillTimer(hwnd, tid):
+                    remaining.discard(tid)
+            if not remaining:
+                break
+            time.sleep(0.15)
+            drain_queue()
+        check("WIN32K", "0x773 probe: KillTimer succeeded for all 5",
+              not remaining, "unkillable=%s" % [hex(t) for t in remaining])
+        # Post-kill table state is INFORMATIONAL on this build: KillTimer
+        # returning TRUE is win32's teardown contract, but 1903 keeps some
+        # killed nodes hash-linked indefinitely (dirty-table semantics,
+        # KDNET rounds 10-12) -- they remain valid forensic rows.
+        for _w in range(5):
+            time.sleep(0.1)
+            drain_queue()
+        res3 = _win32k_enum_timers(handle)
+        ids3 = {r[1] for r in res3[10]}
+        still = [t for t in marker_ids if t in ids3]
+        check("WIN32K", "0x773 post-kill rows (dirty-table info only)",
+              res3[1] == 0,
+              "rows=%d killed_ids_still_linked=%s (informational, not gated)"
+              % (res3[0], [hex(t) for t in still]))
+
+    if ok_window:
+        user32.DestroyWindow(hwnd)
 
 
 def verify_physical(handle) -> None:
@@ -5104,6 +5355,7 @@ def main() -> int:
         verify_cidtable(handle, session_key)
         verify_kernel_object(handle)
         verify_win32k_handles(handle)
+        verify_win32k_timers(handle)
         verify_registry(handle, session_key)
         verify_hook_scan(handle)
         verify_hook_patch(handle, session_key)

@@ -116,3 +116,41 @@ class MYARK_WIN32K_USER_HANDLES_OUTPUT(ctypes.Structure):
         ("Reserved2", ctypes.c_uint32),
         ("Entries", MYARK_WIN32K_USER_HANDLE_ENTRY * WIN32K_HANDLE_CAP),
     ]
+
+
+# --- R3-10b-iii: session timers (win32kbase!gTimerHashTable) ----------------
+
+IOCTL_MYARK_WIN32K_ENUM_TIMERS = _ctl_code(0x773)
+
+WIN32K_TIMER_CAP = 256
+
+
+class MYARK_WIN32K_TIMER_ENTRY(ctypes.Structure):
+    _fields_ = [
+        ("Index", ctypes.c_uint32),
+        ("TimerId", ctypes.c_uint32),
+        ("ElapseMs", ctypes.c_uint32),
+        ("Flags", ctypes.c_uint32),
+        ("Pti", ctypes.c_uint64),
+        ("TimerProc", ctypes.c_uint64),
+        ("Window", ctypes.c_uint64),
+        ("Node", ctypes.c_uint64),
+    ]
+
+
+class MYARK_WIN32K_TIMERS_OUTPUT(ctypes.Structure):
+    _fields_ = [
+        ("Count", ctypes.c_uint32),
+        ("DiagStatus", ctypes.c_uint32),
+        ("TimerHashTable", ctypes.c_uint64),
+        ("SessionBase", ctypes.c_uint64),
+        ("BucketCount", ctypes.c_uint32),
+        ("NodeSize", ctypes.c_uint32),
+        ("ScannedBuckets", ctypes.c_uint32),
+        ("Truncated", ctypes.c_uint32),
+        ("TimerHashRva", ctypes.c_uint64),
+        ("Reserved2", ctypes.c_uint32),
+        ("Reserved3", ctypes.c_uint32),
+        ("Reserved4", ctypes.c_uint64),
+        ("Entries", MYARK_WIN32K_TIMER_ENTRY * WIN32K_TIMER_CAP),
+    ]

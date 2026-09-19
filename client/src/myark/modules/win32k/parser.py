@@ -170,9 +170,85 @@ def enum_user_handles(client: Optional[ArkClient]) -> UserHandlesReport:
     )
 
 
+# --- R3-10b-iii: session timers (win32kbase!gTimerHashTable) ----------------
+
+
+@dataclass
+class TimerEntry:
+    index: int = 0
+    timer_id: int = 0
+    elapse_ms: int = 0
+    flags: int = 0
+    pti: int = 0
+    timer_proc: int = 0
+    window: int = 0
+    node: int = 0
+
+    @property
+    def kind(self) -> str:
+        return "window" if self.window else "thread"
+
+
+@dataclass
+class TimersReport:
+    count: int = 0
+    diag_status: int = 0
+    truncated: int = 0
+    timer_hash_table: int = 0
+    session_base: int = 0
+    bucket_count: int = 0
+    node_size: int = 0
+    scanned_buckets: int = 0
+    entries: list = None
+    source: str = "r0"
+
+    def __post_init__(self):
+        if self.entries is None:
+            self.entries = []
+
+
+def enum_timers(client: Optional[ArkClient]) -> TimersReport:
+    if client is None:
+        raise ConnectionError("driver not available")
+
+    out_size = ctypes.sizeof(P.MYARK_WIN32K_TIMERS_OUTPUT)
+    out_buf = P.MYARK_WIN32K_TIMERS_OUTPUT()
+    bytes_returned = client.ioctl(P.IOCTL_MYARK_WIN32K_ENUM_TIMERS,
+                                  (ctypes.c_ubyte * 0)(), out_buf)
+    if bytes_returned < out_size:
+        raise ConnectionError(
+            f"short read: {bytes_returned} < {out_size}")
+    rows = []
+    for i in range(min(out_buf.Count, len(out_buf.Entries))):
+        e = out_buf.Entries[i]
+        rows.append(TimerEntry(
+            index=e.Index,
+            timer_id=e.TimerId,
+            elapse_ms=e.ElapseMs,
+            flags=e.Flags,
+            pti=e.Pti,
+            timer_proc=e.TimerProc,
+            window=e.Window,
+            node=e.Node,
+        ))
+    return TimersReport(
+        count=out_buf.Count,
+        diag_status=out_buf.DiagStatus,
+        truncated=out_buf.Truncated,
+        timer_hash_table=out_buf.TimerHashTable,
+        session_base=out_buf.SessionBase,
+        bucket_count=out_buf.BucketCount,
+        node_size=out_buf.NodeSize,
+        scanned_buckets=out_buf.ScannedBuckets,
+        entries=rows,
+    )
+
+
 __all__ = [
     "GuiThread", "GuiThreadsReport",
     "HookEntry", "HooksReport",
     "UserHandleEntry", "UserHandlesReport",
+    "TimerEntry", "TimersReport",
     "enumerate_gui_threads", "enumerate_hooks", "enum_user_handles",
+    "enum_timers",
 ]

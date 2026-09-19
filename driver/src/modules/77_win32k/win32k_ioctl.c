@@ -102,4 +102,43 @@ NTSTATUS MyArkWin32kIoctlEnumerateUserHandles(
     return STATUS_SUCCESS;
 }
 
+//
+// 0x773 ENUM_TIMERS (R3-10b-iii): walk the session timer hash table via
+// win32kbase!gTimerHashTable. Read-only, no SAFETY_TOKEN (enum surface).
+// Caller context -- the client process must live in the session whose
+// timers are being inspected (the verifier and the R3 CLI always do).
+//
+NTSTATUS MyArkWin32kIoctlEnumerateTimers(
+    _In_  WDFDEVICE  Device,
+    _In_  WDFREQUEST Request,
+    _In_  size_t     InputBufferLength,
+    _In_  size_t     OutputBufferLength,
+    _Out_ size_t*    BytesReturned)
+{
+    NTSTATUS status;
+    PVOID    out_buf;
+    size_t   out_size = sizeof(MYARK_WIN32K_TIMERS_OUTPUT);
+    ULONG    maxEntries = MYARK_WIN32K_TIMER_CAP;
+
+    UNREFERENCED_PARAMETER(Device);
+    UNREFERENCED_PARAMETER(InputBufferLength);
+
+    if (OutputBufferLength < out_size) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    status = MyArkIoctlFetchOutputBuffer(Request, out_size, &out_buf);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    status = MyArkWin32kEnumTimers(
+        (PMYARK_WIN32K_TIMERS_OUTPUT)out_buf, maxEntries);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    *BytesReturned = out_size;
+    return STATUS_SUCCESS;
+}
+
 #endif // MYARK_MODULE_WIN32K

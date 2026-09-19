@@ -4,6 +4,8 @@ win32k R3 - CLI subcommands.
 Usage:
     myark-cli win32k enumerate-gui-threads
     myark-cli win32k enumerate-hooks
+    myark-cli win32k handles [--type N]
+    myark-cli win32k timers
 """
 
 from __future__ import annotations
@@ -72,6 +74,32 @@ def _cmd_handles(args: argparse.Namespace) -> int:
                 pass
 
 
+def _cmd_timers(_args: argparse.Namespace) -> int:
+    client = _open_or_complain()
+    try:
+        r = P.enum_timers(client)
+        diag = f" diag=0x{r.diag_status:08X}" if r.diag_status else ""
+        print(f"# win32k timers: source={r.source} count={r.count}"
+              f" hash_table=0x{r.timer_hash_table:X} session_base=0x{r.session_base:X}"
+              f" buckets={r.bucket_count} node_size=0x{r.node_size:X}"
+              f" scanned={r.scanned_buckets}{diag}")
+        for e in r.entries:
+            proc = f" proc=0x{e.timer_proc:X}" if e.timer_proc else ""
+            print(f"  [{e.index:3d}] id={e.timer_id:#06x} {e.kind:<7}"
+                  f" elapse={e.elapse_ms:6d}ms wnd=0x{e.window:012X}"
+                  f" pti=0x{e.pti:012X}{proc}")
+        return 0
+    except (ValueError, ConnectionError, OSError) as exc:
+        print(f"!! win32k timers: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+
 def _setup_cli(subparsers, _client=None) -> None:
     p_root = subparsers.add_parser(
         "win32k",
@@ -94,6 +122,12 @@ def _setup_cli(subparsers, _client=None) -> None:
     p3.add_argument("--type", type=int, default=None,
                     help="filter by raw TYPE_* id (e.g. 1=Window, 5=Hook)")
     p3.set_defaults(_handler=_cmd_handles)
+
+    p4 = p_subs.add_parser(
+        "timers",
+        help="walk the session timer hash table (window/thread timers, R3-10b-iii)",
+    )
+    p4.set_defaults(_handler=_cmd_timers)
 
 
 def _cmd_root(_args: argparse.Namespace) -> int:

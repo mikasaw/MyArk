@@ -25,8 +25,9 @@ def register(
         description=(
             "win32k module (R0 GUI thread + syscall-table hook enum, both "
             "still S7.3 stubs; R3-10a USER handle table via gSharedInfo: "
-            "windows/hooks/menus; 3 IOCTLs: ENUMERATE_GUI_THREADS / "
-            "ENUMERATE_HOOKS / ENUM_USER_HANDLES)"
+            "windows/hooks/menus; R3-10b-iii session timer hash table: "
+            "window/thread timers; 4 IOCTLs: ENUMERATE_GUI_THREADS / "
+            "ENUMERATE_HOOKS / ENUM_USER_HANDLES / ENUM_TIMERS)"
         ),
         extra={"r0_only": True, "read_only": True},
     )

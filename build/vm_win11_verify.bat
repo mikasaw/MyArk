@@ -58,9 +58,19 @@ if errorlevel 1 (
 echo [OK] MyArkCore RUNNING
 
 echo [3/5] detached verify run via schtasks
+REM The done marker must echo this run's random token (pushed next to the
+REM runner) -- a stale marker from a previous run would otherwise pass the
+REM poll when the flaky exec channel silently drops the task start.
+set "MYARK_VTOKEN=VT_%RANDOM%%RANDOM%"
+> "%~dp0verify_token_host.txt" echo %MYARK_VTOKEN%
+"%VMRUN%" -T ws %VPARGS% -gu %MYARK_GUEST_USER% -gp %MYARK_GUEST_PASS% CopyFileFromHostToGuest "%VMX%" "%~dp0verify_token_host.txt" "%GDIR%\verify_token.txt"
+if not "%errorlevel%"=="0" (
+    echo [FAIL] token copy
+    exit /b 1
+)
 "%VMRUN%" -T ws %VPARGS% -gu %MYARK_GUEST_USER% -gp %MYARK_GUEST_PASS% runProgramInGuest "%VMX%" "cmd.exe" "/c schtasks /create /tn MyArkVerify /tr %GDIR%\run_verify_guest.cmd /sc once /st 23:59 /rl highest /f > %PUB%\sch.txt 2>&1 < NUL & schtasks /run /tn MyArkVerify >> %PUB%\sch.txt 2>&1 < NUL"
 
-echo [4/5] poll guest verify_done.txt
+echo [4/5] poll guest verify_done.txt (token %MYARK_VTOKEN%)
 set /a TRIES=0
 :verify_poll
 ping -n 11 127.0.0.1 >nul
@@ -72,9 +82,9 @@ if not exist "%~dp0verify_done.txt" (
     echo [FAIL] verify did not finish - see build\vm_alive_check.bat
     exit /b 1
 )
-findstr /c:"VERIFY_EXIT 0" "%~dp0verify_done.txt" >nul
+findstr /c:"VERIFY_EXIT 0 TOKEN=%MYARK_VTOKEN%" "%~dp0verify_done.txt" >nul
 if errorlevel 1 (
-    echo [FAIL] verify exited nonzero - see build\verify_out11.txt
+    echo [FAIL] verify exited nonzero or stale marker - see build\verify_out11.txt
     goto pull_log
 )
 

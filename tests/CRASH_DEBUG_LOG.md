@@ -2447,3 +2447,91 @@
    gTimerHashTable/gptmrMaster 链差分。
 3. pHead 补齐：desktop-heap 基址推导（W32PROCESS 链）。
 4. WinEvent 钩子（DESKTOPINFO 链）。
+
+## 2026-09-19 — R3-10b-iii：0x773 会话定时器枚举落地 + 三连校准坑（nID 偏移 / 桶数 32→64 / 表成员资格抖动与脏表语义）（test2 1903 + Win11 22631，KDNET 轮 8-12b）
+
+### 现象
+- 0x773 ENUM_TIMERS 首版实现后，1903 验证套件 5 个标记定时器
+  （窗口定时器，探针/verify 进程自建）0/5 或 2/5 可见，且多次重跑
+  稳定地只有 2 个出现；KillTimer 全部成功后仍有 1-2 个"已杀"节点
+  留在枚举结果里。
+- KDNET 轮 9-10 逐桶 dump 时 walk 脚本零节点输出：主机侧
+  parse_qwords 正则要求每个 qword 后都有尾随空白，dq 行最后一个值
+  永远匹配不上，整行被丢（regex 无报错、静默零数据）。
+- Win11 侧 `dt win32kbase!_TIMER` 公共 PDB 无类型信息
+  （Symbol not found）——离线解码是唯一路径。
+
+### 与参考的对比
+- **TIMER 节点布局（18363，双样本 0x4343/0x4444 落袋）**：
+  sizeof=0xA0；+0x00 LIST_ENTRY（哈希桶链）；+0x10 tick；+0x24 池
+  tag "Usmt"；+0x48 PTHREADINFO（探针 5 定时器同值）；+0x50 用户态
+  pTimerProc（同一 ctypes 回调同值；系统 caret 定时器为 0）；+0x58
+  uElapse 毫秒（10000=SetTimer 实参）；+0x60 dword flags；+0x88 内核
+  PWND（0=线程定时器）；+0x90 nID（UINT）。同一节点 +0x90 在系统
+  定时器上为 0/1、垃圾节点上为杂值——字段语义按对象类别分形。
+- **桶数 = 64 不是 32**：表总长 1KB（L100），bucket 35/41/45/48/62
+  非空（0x84c0/0x95a0/0x5353/0x5353/5min 系统定时器等），全部落在
+  32-bucket 视野之外。这是"稳定 2/5"的根因：哈希落进前 32 桶的
+  子集才可见。修 64 桶后单轮 count 5→11→25（新 boot 会话系统定时
+  器更多）。
+- **表成员资格语义（多轮冻结对拍）**：线程不泵消息时，定时器首次
+  触发（WM_TIMER 入队无人取）后从哈希摘链，节点随 tick 进出链——
+  同一探针两次冻结 2/5 vs 0/5；泵消息/静默无差别；KillTimer 对
+  "当前不在链上"的节点返回 FALSE（重试后全部成功），KillTimer=TRUE
+  后部分节点仍长期滞留（脏表语义，死节点数据仍是有效取证内容）。
+  历史泄漏节点（进程已死的探针残留：wnd=0、pti/proc 悬垂）长期
+  在表中——本身就是 ARK 可见面的取证素材。
+
+### 修复尝试 / 关键决策回顾
+- nID 偏移定位走"标记差分"：探针定时器用已知 id（0x4141-0x4545、
+  0x4343/0x4444 双样本在 +0x90 精确命中），一次性把 5 个字段偏移
+  全部闭环；公共 PDB 无类型信息，dt 捷径不存在。
+- 驱动解析器/r3 解析器偏移对拍法：0x773 首验全字段错位 8 字节
+  （C 头 64B，python 误抄 0x772 的 72B——错位模式：python.Index 读
+  到 C.ElapseMs、python.pti 读到 C.TimerProc、python.window 读到
+  C.Node）。guest 内字段诊断脚本（复用 verify_core 管道）一次定位。
+- verify 断言设计服从 OS 语义：60s elapse（验证窗口全程 pre-fire，
+  免触发摘链）+ pid 派生 id（杜绝跨运行泄漏节点自碰撞）+ 泵消息
+  助链入 + KillTimer 重试（churn-FALSE）+ 可见性 ≥2（严格解码：
+  elapse 60000 / 单 pti / 单非零 window）+ KillTimer 全 ACK 严格；
+  死节点滞留仅信息披露不 gate。
+- 1903 guest 长会话退化再现身（PREPARE #1 err=1450）：硬重置后
+  全绿——MUTEX 1450 是环境态不是代码态。
+- KDNET `s -d` 池搜索语法：范围必须在前（`s -d <start> L?size <val>`），
+  `L?size <start>` 顺序报 Couldn't resolve。
+
+### 结果
+- 0x773 ENUM_TIMERS 落地：驱动 walker（64 桶全走查、节点 0xA0 守护
+  读、DiagStatus 带 stage 面包屑）+ 共享协议（48B 条目 ×256，头部
+  64B）+ verify_core 探针与断言 + 客户端
+  `myark win32k timers`（protocol/parser/cli/plugin 四件套）。
+- 1903 全绿 [VERIFY] OK（每 boot 会话基址 ASLR 变化，驱动逐调用
+  解析正确）；22631 复用 18363 节点偏移 + RVA 0x288320，验证套件
+  的标记重校验即其正确性证明。
+- 附带成果：verify WIN32K 段遗留的位置参数 lambda（P2 韧性项）
+  改为显式元组索引。
+
+### TODO
+1. 22631 TIMER 节点偏移与 18363 差异核查（若 Win11 标记断言失败，
+   一次 KDNET 轮差分 + profile 分行）。
+2. pHead/desktop-heap 推导（W32PROCESS 链，远期）。
+3. WinEvent 钩子（DESKTOPINFO 链）。
+4. 发布后轮换 KDNET key 与 guest 口令（用户侧）。
+
+### 追记（同日晚）：22631 结构差异判定 + 0x773 build 门控落地
+- **22631 差分结论**：KDNET 轮 13（token 防陈旧探针 + 全桶 walk 63
+  节点）证实 RVA 0x288320 处的表在 22631 上是内联 LIST_ENTRY 桶
+  阵列（空桶自指），但链上分配的池 tag 为 "Wnf "/"Ntfc"/"Rspp" 等
+  而非 1903 的 "Usmt"，+0x10 tick 模式不符——轮 8 的符号名识别
+  （x win32kbase!gTimer*）在该 build 不可靠。标记差分零命中。
+- **决策**：0x773 按 build 门控——仅 18362/18363 出行；未标定
+  build 返回 DiagStatus=STATUS_NOT_IMPLEMENTED(0xC0000002)+
+  Count=0（dyndata 26100 门控同款先例）。verify 对未标定 build
+  显式 skip。宁缺毋错：拒绝服务另一 build 的偏移。
+- **运维坑两枚**：① Win11 Tools exec 通道随时间退化（schtasks
+  创建命令被静默丢弃）→ 硬重置 guest 恢复；② 后台 shell 丢 cwd
+  导致 vm_win11_verify 未带 win11 环境跑到 test2 上（"时间倒流"
+  假象 = 两个 guest 的文件状态被误认为同一台）——舰队调用一律
+  显式 `call vm_env_win11.bat`。
+- Win11 guest 快照回滚丢 python312：embeddable 包重装脚本
+  （build/vm_win11_python_setup.cmd，schtasks 方式）已沉淀。

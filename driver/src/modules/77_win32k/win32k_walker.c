@@ -309,11 +309,8 @@ typedef struct _MYARK_WIN32K_SYS_MODULE_ENTRY {
 // shadow-SSDT walker). Find "win32kbase.sys" and take its ImageBase.
 //
 static BOOLEAN
-MyArkWin32kResolveSessionBase(
-    _In_ const MYARK_WIN32KBASE_PROFILE* Profile,
+MyArkWin32kFindSessionImage(
     _Out_ UINT64* Win32kBase,
-    _Out_ UINT64* KernelAheList,
-    _Out_ UINT64* KernelPsi,
     _Out_ UINT32* Stage)
 {
     typedef NTSTATUS (NTAPI *QUERY_FN)(ULONG, PVOID, ULONG, PULONG);
@@ -327,8 +324,6 @@ MyArkWin32kResolveSessionBase(
     UINT64 w32kbaseImage = 0;
 
     *Win32kBase = 0;
-    *KernelAheList = 0;
-    *KernelPsi = 0;
 
     RtlInitUnicodeString(&name, L"ZwQuerySystemInformation");
     query = (QUERY_FN)MmGetSystemRoutineAddress(&name);
@@ -386,6 +381,31 @@ MyArkWin32kResolveSessionBase(
 
     if (w32kbaseImage == 0) {
         *Stage = 5;
+        return FALSE;
+    }
+    *Win32kBase = w32kbaseImage;
+    return TRUE;
+}
+
+//
+// Resolve the KERNEL handle table through the win32kbase session base
+// (module-list scan above) plus the calibrated gSharedInfo RVA.
+//
+static BOOLEAN
+MyArkWin32kResolveSessionBase(
+    _In_ const MYARK_WIN32KBASE_PROFILE* Profile,
+    _Out_ UINT64* Win32kBase,
+    _Out_ UINT64* KernelAheList,
+    _Out_ UINT64* KernelPsi,
+    _Out_ UINT32* Stage)
+{
+    UINT64 w32kbaseImage = 0;
+
+    *Win32kBase = 0;
+    *KernelAheList = 0;
+    *KernelPsi = 0;
+
+    if (!MyArkWin32kFindSessionImage(&w32kbaseImage, Stage)) {
         return FALSE;
     }
 
@@ -549,6 +569,167 @@ MyArkWin32kEnumUserHandles(
     }
     // Walk failures are reported in-band via DiagStatus (rows stay valid);
     // a failing NTSTATUS here would only hide the partial data.
+    return STATUS_SUCCESS;
+}
+
+//
+// win32kbase!gTimerHashTable RVA profile (KDNET-calibrated, see
+// CRASH_DEBUG_LOG R3-10b-iii). Zero RVA row = not yet calibrated.
+//
+typedef struct _MYARK_WIN32K_TIMER_PROFILE {
+    ULONG BuildMin;
+    ULONG BuildMax;
+    ULONG GTimerHashTableRva;
+} MYARK_WIN32K_TIMER_PROFILE;
+
+static const MYARK_WIN32K_TIMER_PROFILE g_MyArkWin32kTimerProfiles[] = {
+    { 18362, 18363, 0x215de0 },
+    // 22621/22631: KDNET round 8 calibrated a gTimerHashTable RVA
+    // (0x288320) and round 13 walked it live -- but the linked structures
+    // carry non-TIMER pool tags ("Wnf "/"Ntfc"/"Rspp") where 1903 has
+    // "Usmt", so the node layout there is NOT the calibrated 0xA0 TIMER
+    // shape. The build stays gated out until a 22631-specific
+    // differential calibration lands (R3-10b-iii follow-up); serving
+    // 1903 offsets there would fabricate rows.
+    { 22621, 22631, 0 },
+};
+
+static const MYARK_WIN32K_TIMER_PROFILE*
+MyArkWin32kTimerProfileForBuild(_In_ ULONG Build)
+{
+    ULONG i;
+    for (i = 0; i < ARRAYSIZE(g_MyArkWin32kTimerProfiles); i++) {
+        if (Build >= g_MyArkWin32kTimerProfiles[i].BuildMin
+            && Build <= g_MyArkWin32kTimerProfiles[i].BuildMax
+            && g_MyArkWin32kTimerProfiles[i].GTimerHashTableRva != 0) {
+            return &g_MyArkWin32kTimerProfiles[i];
+        }
+    }
+    return NULL;
+}
+
+//
+// TIMER node field offsets. KDNET-calibrated on 1903 (CRASH_DEBUG_LOG
+// R3-10b-iii): sizeof(TIMER) = 0xA0, owning PTHREADINFO @0x48, user-mode
+// pTimerProc @0x50, uElapse ms @0x58, flags dword @0x60, kernel PWND @0x88
+// (0 = thread timer), nID @0x90 -- double-sample confirmed (probe timers
+// 0x4343/0x4444 at +0x90, elapse 10000 at +0x58, shared pti/window).
+// Run-time revalidation: verify_core plants its own marker timers and
+// asserts they come back through 0x773, so a layout drift on another
+// build fails the test instead of yielding silently wrong rows.
+//
+#define MYARK_WIN32K_TIMER_SIZE            0xA0
+#define MYARK_WIN32K_TIMER_OFF_PTI         0x48
+#define MYARK_WIN32K_TIMER_OFF_PROC        0x50
+#define MYARK_WIN32K_TIMER_OFF_ELAPSE      0x58
+#define MYARK_WIN32K_TIMER_OFF_FLAGS       0x60
+#define MYARK_WIN32K_TIMER_OFF_WINDOW      0x88
+#define MYARK_WIN32K_TIMER_OFF_NID         0x90
+// KDNET-calibrated (2026-09-19): the table spans 1 KB = 64 LIST_ENTRY
+// buckets. With a 32-bucket walk everything hashing into 32..63 silently
+// vanished -- probe timers showed up as a stable "2 of 5" subset.
+#define MYARK_WIN32K_TIMER_HASH_BUCKETS    64
+#define MYARK_WIN32K_TIMER_BUCKET_HOPS     512     // loop safety cap
+
+NTSTATUS
+MyArkWin32kEnumTimers(
+    _Out_ PMYARK_WIN32K_TIMERS_OUTPUT Out,
+    _In_  ULONG                       MaxEntries)
+{
+    NTSTATUS diag = STATUS_SUCCESS;
+    RTL_OSVERSIONINFOW os;
+    const MYARK_WIN32K_TIMER_PROFILE* profile;
+    UINT64 sessionBase = 0;
+    UINT64 hashTable = 0;
+    ULONG bucket;
+
+    RtlZeroMemory(Out, sizeof(*Out));
+
+    RtlZeroMemory(&os, sizeof(os));
+    os.dwOSVersionInfoSize = sizeof(os);
+    if (!NT_SUCCESS(RtlGetVersion(&os))) {
+        Out->DiagStatus = (UINT32)STATUS_NOT_SUPPORTED;
+        return STATUS_SUCCESS;
+    }
+    profile = MyArkWin32kTimerProfileForBuild(os.dwBuildNumber);
+    if (profile == NULL) {
+        // Not calibrated for this build (zero-RVA row or no row): refuse
+        // cleanly instead of serving another build's node offsets.
+        Out->DiagStatus = (UINT32)STATUS_NOT_IMPLEMENTED;
+        return STATUS_SUCCESS;
+    }
+    Out->TimerHashRva = profile->GTimerHashTableRva;
+
+    {
+        UINT32 stage = 0;
+        if (!MyArkWin32kFindSessionImage(&sessionBase, &stage)) {
+            Out->Reserved2 = stage;         // DIAG breadcrumb
+            Out->DiagStatus = (UINT32)STATUS_NOT_FOUND;
+            return STATUS_SUCCESS;
+        }
+    }
+    Out->SessionBase = sessionBase;
+    hashTable = sessionBase + profile->GTimerHashTableRva;
+    Out->TimerHashTable = hashTable;
+    Out->BucketCount = MYARK_WIN32K_TIMER_HASH_BUCKETS;
+    Out->NodeSize = MYARK_WIN32K_TIMER_SIZE;
+
+    for (bucket = 0; bucket < MYARK_WIN32K_TIMER_HASH_BUCKETS; bucket++) {
+        UINT64 bucketAddr = hashTable + (UINT64)bucket * 16;
+        UINT64 node = 0;
+        ULONG hops;
+
+        Out->ScannedBuckets = bucket + 1;
+
+        if (!MyArkWin32kReadU64((PVOID)bucketAddr, &node)) {
+            diag = STATUS_ACCESS_VIOLATION;
+            break;
+        }
+
+        for (hops = 0;
+             node != bucketAddr && node != 0 && hops < MYARK_WIN32K_TIMER_BUCKET_HOPS;
+             hops++) {
+            UCHAR raw[MYARK_WIN32K_TIMER_SIZE];
+            UINT64 next;
+
+            if (node < 0xFFFF800000000000ULL) {
+                break;                      // non-canonical Flink: stop bucket
+            }
+            if (!MyArkWin32kRead((PVOID)node, raw, sizeof(raw))) {
+                diag = STATUS_ACCESS_VIOLATION;
+                break;
+            }
+            next = *(UINT64*)(raw + 0);
+
+            if (Out->Count < MaxEntries) {
+                PMYARK_WIN32K_TIMER_ENTRY e = &Out->Entries[Out->Count];
+                e->Index = Out->Count;
+                e->TimerId = *(UINT32*)(raw + MYARK_WIN32K_TIMER_OFF_NID);
+                e->ElapseMs = *(UINT32*)(raw + MYARK_WIN32K_TIMER_OFF_ELAPSE);
+                e->Flags = *(UINT32*)(raw + MYARK_WIN32K_TIMER_OFF_FLAGS);
+                e->Pti = *(UINT64*)(raw + MYARK_WIN32K_TIMER_OFF_PTI);
+                e->TimerProc = *(UINT64*)(raw + MYARK_WIN32K_TIMER_OFF_PROC);
+                e->Window = *(UINT64*)(raw + MYARK_WIN32K_TIMER_OFF_WINDOW);
+                e->Node = node;
+                Out->Count += 1;
+            } else {
+                Out->Truncated = 1;
+            }
+
+            node = next;
+        }
+        if (diag != STATUS_SUCCESS) {
+            break;
+        }
+    }
+
+    Out->DiagStatus = (UINT32)diag;
+    // Same in-band convention as 0x772: a fault mid-walk after rows were
+    // produced means "partial enumeration", which is still useful
+    // forensic data -- report success with what we got.
+    if (diag == STATUS_ACCESS_VIOLATION && Out->Count > 0) {
+        Out->DiagStatus = (UINT32)STATUS_SUCCESS;
+    }
     return STATUS_SUCCESS;
 }
 
