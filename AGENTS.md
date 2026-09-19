@@ -136,7 +136,12 @@ git switch main
   - 在孤儿树之外直接 commit 后 push 到 main；
   - 对任何已发布分支 `git push --force`。
 
-- **现状（2026-09-14 核查）**：本仓库 143 commits、`main` 单根
-  （root = `6d30b76`）、无 `master`、**无 remote**（尚未发布）；root 作者为
-  `MyArkDev <myark@example.com>`，**不是** noreply——首次发布前必须按上面
-  Plan A 以 noreply 身份重建单根，或明确记录豁免。
+- **现状（2026-09-19 已发布）**：`main` 已按 Plan A 重建为孤儿单根
+  （root = `74693e7`，作者/提交者均为
+  `MyArkCppDev <57830391+mikasaw@users.noreply.github.com>`）并发布到
+  `https://github.com/mikasaw/MyArk`（public，仅 `main` 分支）。旧
+  218-commit 历史（含敏感值，**永不 push**）保存在本地 reflog，旧
+  末端 = `db971c3`；本地遗留分支 `feat/mit-254-shared-driver-headers`
+  与 `s9.2-multiwindow` 不得推送。敏感值排查（KDNET key/guest 账密/
+  个人路径）在发布树为零命中，真实值住 `build/vm_env_local.bat`
+  （gitignored）。
