@@ -598,6 +598,24 @@ MyArkDynDataIoctlQueryHandle(
     }
 
     //
+    // Same build-range gate as QUERY_PROCESS (2026-09-19 26100 inventory):
+    // the entry decode below (stride 0x20, packed GrantedAccess/TypeIndex)
+    // is only validated on the profile'd builds; on anything newer it
+    // would emit garbage rows -- worse than empty.
+    //
+    const MYARK_ARK_OFFSETS* offsHandle = MyArkArkOffsetsGet();
+    if (offsHandle == NULL || !offsHandle->Valid
+        || !offsHandle->ProfileMatched) {
+        out->Size    = (UINT32)FIELD_OFFSET(MYARK_DYNDATA_QUERY_HANDLE_OUTPUT, Entries[0]);
+        out->Count   = 0;
+        out->TotalSeen = 0;
+        out->PspCidTable = (UINT64)g_MyArkDynDataPspCidTable;
+        out->EntryStructSize = sizeof(MYARK_DYNDATA_HANDLE_ENTRY);
+        *BytesReturned = out->Size;
+        return STATUS_SUCCESS;
+    }
+
+    //
     // PspCidTable is a HANDLE_TABLE; the TableCode field at offset
     // MYARK_OFF_HANDLE_TABLE_TABLE_CODE encodes both the level (0..2) and
     // the table base pointer. We only walk level-0 tables -- a flat 512-
@@ -731,6 +749,22 @@ MyArkDynDataIoctlQueryFile(
     if (g_MyArkDynDataPspCidTable == NULL
         || !MmIsAddressValid(g_MyArkDynDataPspCidTable)
         || g_MyArkDynDataObTypeObjectType == NULL) {
+        out->Size    = (UINT32)FIELD_OFFSET(MYARK_DYNDATA_QUERY_FILE_OUTPUT, Entries[0]);
+        out->Count   = 0;
+        out->TotalSeen = 0;
+        out->ObTypeIndexList = (UINT64)g_MyArkDynDataObTypeObjectType;
+        out->EntryStructSize = sizeof(MYARK_DYNDATA_FILE_ENTRY);
+        *BytesReturned = out->Size;
+        return STATUS_SUCCESS;
+    }
+
+    //
+    // Same build-range gate as QUERY_PROCESS (2026-09-19 26100 inventory):
+    // the handle-entry decode and the FILE_OBJECT probes below are only
+    // validated on the profile'd builds.
+    //
+    const MYARK_ARK_OFFSETS* offsFile = MyArkArkOffsetsGet();
+    if (offsFile == NULL || !offsFile->Valid || !offsFile->ProfileMatched) {
         out->Size    = (UINT32)FIELD_OFFSET(MYARK_DYNDATA_QUERY_FILE_OUTPUT, Entries[0]);
         out->Count   = 0;
         out->TotalSeen = 0;
@@ -1240,6 +1274,23 @@ MyArkDynDataIoctlQueryObject(
         out->Count   = 0;
         out->TotalSeen = 0;
         out->ObTypeObjectType = 0;
+        out->EntryStructSize = sizeof(MYARK_DYNDATA_OBJECT_ENTRY);
+        *BytesReturned = out->Size;
+        return STATUS_SUCCESS;
+    }
+
+    //
+    // Same build-range gate as QUERY_PROCESS (2026-09-19 26100 inventory):
+    // the OBJECT_TYPE.TypeList back-offset 0x018 below is only validated
+    // on the profile'd builds.
+    //
+    const MYARK_ARK_OFFSETS* offsObject = MyArkArkOffsetsGet();
+    if (offsObject == NULL || !offsObject->Valid
+        || !offsObject->ProfileMatched) {
+        out->Size    = (UINT32)FIELD_OFFSET(MYARK_DYNDATA_QUERY_OBJECT_OUTPUT, Entries[0]);
+        out->Count   = 0;
+        out->TotalSeen = 0;
+        out->ObTypeObjectType = (UINT64)g_MyArkDynDataObTypeObjectType;
         out->EntryStructSize = sizeof(MYARK_DYNDATA_OBJECT_ENTRY);
         *BytesReturned = out->Size;
         return STATUS_SUCCESS;
