@@ -86,6 +86,13 @@ typedef struct _MYARK_WIN32K_HOOKS_OUTPUT {
 // (resolved via the caller's PEB->Ldr module list + user32 export table --
 // Tier B, no win32k internal offsets). One row per live handle entry
 // {index, kernel object (win32k session space), user mirror, type, flags}.
+//
+// R3-10b-iv: when the desktop-heap kernel base is derivable for the
+// build (currently 18362/18363: W32PROCESS+0x7f8 -> descriptor, base =
+// *(desc-0x28), KDNET-calibrated) and the per-row self-check passes, the
+// row KernelObject carries the TRUE kernel object pointer (heap base +
+// record offset, verified against the object's own handle field).
+// Otherwise it stays 0/masked exactly as the user copy reads.
 // Covers windows / menus / icons / hooks / call procedures / accelerator
 // tables ... session-wide. Must run in the context of a GUI process (the
 // IOCTL caller), PASSIVE_LEVEL.
@@ -124,8 +131,14 @@ typedef struct _MYARK_WIN32K_USER_HANDLES_OUTPUT {
     UINT64  Win32kBase;                          // win32kbase session base (0 = unresolved)
     UINT64  KernelAheList;                       // KERNEL handle table (real pHead; 0 = unresolved)
     UINT64  KernelPsi;                           // kernel SERVERINFO pointer
-    UINT32  PsiMatch;                            // 1 = kernel psi == user copy psi
-    UINT32  Reserved2;
+    UINT32  PsiMatch;                            // bit0 = kernel psi == user copy psi;
+                                                 // bit1 = desktop-heap base derived
+                                                 // (rows' KernelObject self-checked)
+    UINT32  Reserved2;                           // DIAG breadcrumb: resolver
+                                                 // stage 1..6, or 0x100|hstage
+                                                 // for heap-derivation failure
+                                                 // (0x11 no W32PROCESS,
+                                                 // 0x12 bad desc, 0x13 bad base)
     MYARK_WIN32K_USER_HANDLE_ENTRY Entries[MYARK_WIN32K_HANDLE_CAP];
 } MYARK_WIN32K_USER_HANDLES_OUTPUT, *PMYARK_WIN32K_USER_HANDLES_OUTPUT;
 

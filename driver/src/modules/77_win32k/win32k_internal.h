@@ -38,11 +38,18 @@
 // PsGetProcessPeb is exported by ntoskrnl but not declared by this WDK's
 // ntddk (the PEB type itself is kernel-opaque here). We only ever read
 // flat offsets from the returned base, so a PVOID mirror is ABI-identical.
+// PsGetProcessWin32Process follows the same pattern (KDNET round 16:
+// EPROCESS.Win32Process = +0x3b0 on 1903).
 //
 NTKERNELAPI
 PVOID
 NTAPI
 PsGetProcessPeb(_In_ PEPROCESS Process);
+
+NTKERNELAPI
+PVOID
+NTAPI
+PsGetProcessWin32Process(_In_ PEPROCESS Process);
 
 //
 // R3-10a: walk the CALLER-process USER handle table (gSharedInfo.aheList).

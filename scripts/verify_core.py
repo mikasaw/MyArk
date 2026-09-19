@@ -3332,6 +3332,24 @@ def verify_win32k_handles(handle) -> None:
           len(rows) > 0 and zero_payload <= max(10, len(rows) // 100),
           "rows=%d zero_payload=%d" % (len(rows), zero_payload))
 
+    # R3-10b-iv: when the desktop-heap base derivation runs (PsiMatch
+    # bit1), window rows gain a TRUE kernel object pointer (self-checked
+    # against the object's own handle field) and those rows MUST be
+    # canonical. Rows may also carry raw user-copy offsets in kobj on
+    # some sessions -- only canonical (heap-derived) values are asserted,
+    # and only when the derivation reported success.
+    if psi_match & 2:
+        kern_rows = [r for r in rows if r[3] > 0xFFFF800000000000]
+        check("WIN32K", "0x772 kernel phead rows are canonical (heap-derived)",
+              len(kern_rows) >= 1,
+              "heap-derived canonical rows=%d sample=%s"
+              % (len(kern_rows), sorted(hex(r[3]) for r in kern_rows)[:3]))
+    else:
+        check("WIN32K", "0x772 kernel phead derivation (informational)",
+              True, "heap base not derived on this run/build "
+              "(gated or caller lacks desktop heap view) rsv2=0x%X"
+              % _rsv2)
+
     # --- probe round-trip: 3 accelerator tables appear as NEW slots, then
     # vanish. Slot-index delta is layout-independent ground truth (the
     # classic TYPE_* decode of the user-mapped copy is R3-10b work).

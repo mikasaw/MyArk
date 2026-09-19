@@ -265,11 +265,20 @@ typedef struct _MYARK_WIN32KBASE_PROFILE {
     ULONG BuildMin;
     ULONG BuildMax;
     ULONG GSharedInfoRva;
+    // KDNET round 16 (1903): desktop-heap kernel base runtime chain.
+    // W32PROCESS + HeapDescOff -> descriptor; heap base = *(desc - Delta).
+    // Zero HeapDescOff = heap derivation not calibrated for the build.
+    ULONG HeapDescOff;
+    ULONG HeapBaseDeltaBack;
 } MYARK_WIN32KBASE_PROFILE;
 
 static const MYARK_WIN32KBASE_PROFILE g_MyArkWin32kBaseProfiles[] = {
-    { 18362, 18363, 0x213750 },
-    { 22621, 22631, 0x285e80 },      // KDNET-calibrated 2026-09-19
+    // KDNET-calibrated 2026-09-19 (rounds 8/16)
+    { 18362, 18363, 0x213750, 0x7F8, 0x28 },
+    // 22631: gSharedInfo RVA calibrated (round 8); the heap-base chain
+    // was NOT re-derived there (nodes/pool layout differ -- see
+    // R3-10b-iv notes), so derivation stays gated off.
+    { 22621, 22631, 0x285e80, 0, 0 },
 };
 
 static const MYARK_WIN32KBASE_PROFILE*
@@ -394,6 +403,7 @@ MyArkWin32kFindSessionImage(
 static BOOLEAN
 MyArkWin32kResolveSessionBase(
     _In_ const MYARK_WIN32KBASE_PROFILE* Profile,
+    _In_ UINT32 HeEntrySize,
     _Out_ UINT64* Win32kBase,
     _Out_ UINT64* KernelAheList,
     _Out_ UINT64* KernelPsi,
@@ -417,6 +427,10 @@ MyArkWin32kResolveSessionBase(
             || !MyArkWin32kReadU64((PVOID)(kgSharedInfo + 8), KernelAheList)
             || !MyArkWin32kReadU32((PVOID)(kgSharedInfo + 0x10), &heSize)
             || heSize == 0 || heSize > 64
+            // kernel/user are separate SHAREDINFO instances (psi mismatch
+            // finding) -- their strides must still agree, else the
+            // kernel-record walk below would read misaligned data.
+            || heSize != HeEntrySize
             || *KernelPsi == 0 || *KernelAheList == 0
             || *KernelAheList < 0xFFFF800000000000ULL) {
             *Stage = 6;
@@ -438,6 +452,8 @@ MyArkWin32kEnumUserHandles(
     UINT64 psi = 0;
     UINT64 aheList = 0;
     UINT32 heEntrySize = 0;
+    UINT64 kAheWalk = 0;
+    UINT64 heapBase = 0;
     ULONG index;
     ULONG freeRun = 0;
 
@@ -490,7 +506,8 @@ MyArkWin32kEnumUserHandles(
                 UINT64 kAhe = 0;
                 UINT64 kPsi = 0;
                 UINT32 stage = 0;
-                if (MyArkWin32kResolveSessionBase(profile, &w32kBase,
+                if (MyArkWin32kResolveSessionBase(profile, heEntrySize,
+                                                  &w32kBase,
                                                   &kAhe, &kPsi, &stage)) {
                     // Measured 1903: kernel gSharedInfo.psi and the user
                     // copy's psi are DIFFERENT SERVERINFO instances -- the
@@ -499,6 +516,40 @@ MyArkWin32kEnumUserHandles(
                     Out->KernelAheList = kAhe;
                     Out->KernelPsi = kPsi;
                     Out->PsiMatch = (kPsi == psi) ? 1 : 0;
+                    kAheWalk = kAhe;
+
+                    // R3-10b-iv: derive the desktop-heap kernel base for
+                    // the caller's desktop. W32PROCESS + HeapDescOff
+                    // points at a heap-view descriptor whose field at
+                    // -HeapBaseDeltaBack holds the base (KDNET round 16,
+                    // 1903: +0x7f8 / -0x28). Every derived row is
+                    // self-checked below, so a wrong base can never
+                    // fabricate a row value.
+                    if (profile->HeapDescOff != 0) {
+                        PVOID w32p = PsGetProcessWin32Process(
+                            PsGetCurrentProcess());
+                        UINT64 desc = 0;
+                        ULONG hstage = 0;
+                        if (w32p == NULL) {
+                            hstage = 0x11;
+                        } else if (!MyArkWin32kReadU64(
+                                       (PVOID)((UINT64)(UINT_PTR)w32p +
+                                               profile->HeapDescOff), &desc) ||
+                                   desc <= 0xFFFF800000000000ULL) {
+                            hstage = 0x12;
+                        } else if (!MyArkWin32kReadU64(
+                                       (PVOID)(desc - profile->HeapBaseDeltaBack),
+                                       &heapBase) ||
+                                   heapBase <= 0xFFFF800000000000ULL) {
+                            hstage = 0x13;
+                        }
+                        if (hstage == 0) {
+                            Out->PsiMatch |= 2;   // bit1: heap base derived
+                        } else {
+                            heapBase = 0;
+                            Out->Reserved2 = 0x100 | hstage; // DIAG breadcrumb
+                        }
+                    }
                 } else {
                     Out->Reserved2 = stage;   // DIAG breadcrumb
                 }
@@ -556,6 +607,31 @@ MyArkWin32kEnumUserHandles(
         Out->Entries[Out->Count].Reserved = 0;
         Out->Entries[Out->Count].KernelObject = head;
         Out->Entries[Out->Count].UserPointer = user;
+
+        // R3-10b-iv: with the desktop-heap base derived, the KERNEL
+        // aheList record at the same slot holds the object's heap offset
+        // (record@0). Self-check: the object's first qword carries its
+        // own handle (index | gen<<16) -- fill KernelObject only when it
+        // matches, so a wrong base can never fabricate a row value.
+        // Gate: gen@26 decoding assumes the calibrated 32-byte stride.
+        if (heapBase != 0 && kAheWalk != 0 && heEntrySize == 32) {
+            UCHAR kraw[32];
+            if (MyArkWin32kRead((PVOID)(kAheWalk + (UINT64)index * heEntrySize),
+                                kraw, heEntrySize)) {
+                UINT32 koff = *(UINT32*)(kraw + 0);
+                UINT16 kgen = *(UINT16*)(kraw + 26);
+                UINT64 kobj = heapBase + koff;
+                UINT64 hdr = 0;
+                if (koff != 0 &&
+                    MyArkWin32kRead((PVOID)(UINT_PTR)kobj, &hdr,
+                                    sizeof(hdr)) &&
+                    (hdr & 0xFFFFFFFFULL) ==
+                        (UINT32)(index | ((UINT32)kgen << 16))) {
+                    Out->Entries[Out->Count].KernelObject = kobj;
+                }
+            }
+        }
+
         Out->Count += 1;
     }
 
