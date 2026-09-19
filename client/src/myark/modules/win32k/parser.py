@@ -128,12 +128,44 @@ class UserHandlesReport:
     ahe_list: int = 0
     he_entry_size: int = 0
     scanned_slots: int = 0
+    win32k_base: int = 0
+    kernel_ahe_list: int = 0
+    kernel_psi: int = 0
+    psi_match: int = 0
+    rsv2: int = 0
     entries: list = None
     source: str = "r0"
 
     def __post_init__(self):
         if self.entries is None:
             self.entries = []
+
+    @property
+    def heap_derived(self) -> bool:
+        # PsiMatch bit1: desktop-heap base derived AND >=1 row
+        # self-validated against it (driver-side hdr check).
+        return bool(self.psi_match & 2)
+
+    @property
+    def canonical_rows(self) -> int:
+        return sum(1 for e in self.entries
+                   if e.kernel_object >= 0xFFFF800000000000)
+
+    @property
+    def rsv2_text(self) -> str:
+        # Human decode of the Reserved2 breadcrumb (MyArkWin32kIoctl.h).
+        if self.rsv2 == 0:
+            return ("proven" if self.heap_derived
+                    else "scan-not-run/no-profile-row")
+        stage = self.rsv2 & 0xFF
+        if not (self.rsv2 & 0x100):
+            return f"resolver-stage-{stage}"
+        return {
+            0x11: "no-W32PROCESS",
+            0x12: "no-structural-candidate",
+            0x13: "candidates-but-0-rows-validated",
+            0x14: "scan-aborted",
+        }.get(stage, f"heap-stage-{stage:#x}")
 
 
 def enum_user_handles(client: Optional[ArkClient]) -> UserHandlesReport:
@@ -166,6 +198,11 @@ def enum_user_handles(client: Optional[ArkClient]) -> UserHandlesReport:
         ahe_list=out_buf.AheList,
         he_entry_size=out_buf.HeEntrySize,
         scanned_slots=out_buf.ScannedSlots,
+        win32k_base=out_buf.Win32kBase,
+        kernel_ahe_list=out_buf.KernelAheList,
+        kernel_psi=out_buf.KernelPsi,
+        psi_match=out_buf.PsiMatch,
+        rsv2=out_buf.Reserved2,
         entries=rows,
     )
 
@@ -199,6 +236,8 @@ class TimersReport:
     bucket_count: int = 0
     node_size: int = 0
     scanned_buckets: int = 0
+    timer_hash_rva: int = 0
+    rsv2: int = 0
     entries: list = None
     source: str = "r0"
 
@@ -240,6 +279,8 @@ def enum_timers(client: Optional[ArkClient]) -> TimersReport:
         bucket_count=out_buf.BucketCount,
         node_size=out_buf.NodeSize,
         scanned_buckets=out_buf.ScannedBuckets,
+        timer_hash_rva=out_buf.TimerHashRva,
+        rsv2=out_buf.Reserved2,
         entries=rows,
     )
 
