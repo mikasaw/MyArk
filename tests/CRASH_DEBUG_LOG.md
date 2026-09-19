@@ -2264,3 +2264,58 @@
    （RVA 已备：0x213750 / 0x215938，需 22631 对应行）。
 3. WinEvent 钩子：DESKTOPINFO 偏移链，工作量另估。
 4. dyndata QUERY_MODULE/QUERY_SSDT 26100 门控备查；24H2 虚机。
+
+## 2026-09-19 — R3-10b-i：win32kbase 会话基址锚点全链路验证成功（test2 1903，KDNET 第 5-6 轮）
+
+### 现象
+- R3-10b 的阻塞点 = 运行时定位 win32kbase 会话基址。候选①
+  PsWin32kImageBase（nt 导出）→ win32k.sys PE 导入表 → win32kbase
+  导出函数指针 − 标定 RVA；候选② MM_SESSION_SPACE 会话驱动链。
+
+### 与参考的对比
+- 路线①全链路 KDNET 实证（轮 5b）：win32k.sys（会话基址来自
+  PsWin32kImageBase/lm）导入表 import[2] = **win32kbase.sys**
+  （OriginalFirstThunk=0x5ee88, FirstThunk=0x5c018），导入函数名实测
+  W32CalloutDispatch / IsWin32KSyscallFiltered / NtVisualCaptureBits /
+  NtUser* 等——win32k.sys 的 IAT 就是现成的 win32kbase 指针表。
+
+### 修复尝试 / 标定结果
+- `x win32kbase!W32CalloutDispatch` → **RVA = 0x26250**（test2 18363，
+  win32kbase 基址 ffff8562`07ab0000，同一 boot 跨 6 轮会话稳定）。
+- 运行时解析链（驱动侧实现蓝图）：
+  MmGetSystemRoutineAddress("PsWin32kImageBase") 读值 → win32k.sys
+  会话基址 → 安全读 PE（e_lfanew=0xE0 实测）→ dir[1] 导入表 → 找
+  "win32kbase.sys" 描述符 → OriginalFirstThunk 名单匹配
+  "W32CalloutDispatch" 序号 i → FirstThunk[i] 指针值 − 0x26250 =
+  win32kbase 会话基址 → 内核 gSharedInfo = 基址 + 0x213750 → 内核
+  aheList（真表）→ 同槽位 pHead 补齐 / gptmrMaster(+0x215938) 定时器链。
+- 运行时自校验：内核 gSharedInfo.psi 应与用户副本 psi 一致（相等即
+  基址推导正确）。
+
+### 关键决策回顾
+- **KDNET 第 5 轮踩出一条铁律：kd 默认基数是 16**——表达式里的
+  十进制 24/112 被当 0x24/0x112（偏移全错且无报错），所有偏移必须
+  显式 0x 前缀。
+- JSON-RPC 文本要用 content[0].text（json.dumps 后的 
+ 是字面量，
+  正则跨行解析会静默失败）。
+- 轮 5 的 nt! 符号未加载（.reload /f ntoskrnl.exe 静默空输出）——
+  校准脚本不能依赖 nt! 符号，改从 lm 直接取 win32k.sys 基址。
+- 内核句柄表记录（aheList@ffff8525`c0c00000）的 @0 是**小偏移**
+  （0x10d0/0x32a0/0x238c0，非内核指针）——内核副本的 pHead 语义与
+  用户副本不同源，字段级解码需要"加速表创建/销毁 × 内核表差分"的
+  下一轮标定（R3-10b-ii；session-1 投递问题届时再解，或用已知句柄
+  低 16 位对齐）。
+
+### 结果
+- R3-10b-i 交付达成：锚点链验证成功，阻塞点解除。标定常量（18363）：
+  W32CalloutDispatch RVA=0x26250、gSharedInfo RVA=0x213750、
+  gptmrMaster RVA=0x215938、HeEntrySize=0x20。
+- 22631 行待同法一轮 KDNET（win11_kdnet_key.txt，端口 50002）。
+
+### TODO
+1. R3-10b-ii：驱动实现（会话基址解析器 + 0x772 内核表扩展 +
+   定时器枚举），22631 标定行。
+2. 内核记录字段级标定：加速表差分 × 内核表（解决 @0 偏移语义）。
+3. WinEvent 钩子（DESKTOPINFO 链）；dyndata QUERY_MODULE/SSDT
+   26100 门控备查；24H2 虚机。
