@@ -3258,7 +3258,7 @@ IOCTL_MYARK_WIN32K_ENUM_USER_HANDLES = _ctl_code(FILE_DEVICE_UNKNOWN, 0x772, MET
 
 _WIN32K_HANDLE_CAP = 2048
 _WIN32K_ENTRY_SIZE = 32          # C natural alignment: 4×UINT32 + 2×UINT64
-_WIN32K_OUT_SIZE = 40 + _WIN32K_ENTRY_SIZE * _WIN32K_HANDLE_CAP
+_WIN32K_OUT_SIZE = 72 + _WIN32K_ENTRY_SIZE * _WIN32K_HANDLE_CAP + 64
 
 _WIN32K_TYPE_WINDOW = 1
 _WIN32K_TYPE_HOOK = 5
@@ -3270,13 +3270,16 @@ def _win32k_enum_handles(handle):
                      _WIN32K_OUT_SIZE)
     count, diag, shared, ahe, he_size, scanned, truncated = \
         struct.unpack_from("<IIQQIII", payload, 0)
+    w32k_base, kern_ahe, kern_psi, psi_match, _rsv2 = \
+        struct.unpack_from("<QQQII", payload, 40)
     rows = []
     for i in range(count):
-        base = 40 + i * _WIN32K_ENTRY_SIZE
+        base = 72 + i * _WIN32K_ENTRY_SIZE
         index, rtype, flags = struct.unpack_from("<III", payload, base)
         kobj, uptr = struct.unpack_from("<QQ", payload, base + 16)
         rows.append((index, rtype, flags, kobj, uptr))
-    return count, diag, shared, ahe, he_size, scanned, truncated, rows
+    return (count, diag, shared, ahe, he_size, scanned, truncated,
+            w32k_base, kern_ahe, kern_psi, psi_match, _rsv2, rows)
 
 
 def verify_win32k_handles(handle) -> None:
@@ -3284,7 +3287,8 @@ def verify_win32k_handles(handle) -> None:
     user32 = ctypes.WinDLL("user32")
 
     try:
-        count, diag, shared, ahe, he_size, scanned, truncated, rows = \
+        (count, diag, shared, ahe, he_size, scanned, truncated,
+         w32k_base, kern_ahe, kern_psi, psi_match, _rsv2, rows) = \
             _win32k_enum_handles(handle)
     except OSError as exc:
         check("WIN32K", "0x772 baseline enum", False, str(exc))
@@ -3299,6 +3303,26 @@ def verify_win32k_handles(handle) -> None:
           and count >= 10,
           "count=%d diag=0x%08X shared=0x%X ahe=0x%X he=%d scanned=%d"
           % (count, diag, shared, ahe, he_size, scanned))
+
+    # R3-10b-ii: kernel handle table via the win32kbase session base.
+    # Resolution is build-profile dependent (22631 row pending). Measured
+    # finding: kernel gSharedInfo.psi and the user copy psi are DIFFERENT
+    # SERVERINFO instances, so psi_match is informational, not an
+    # invariant. Session identity caveat: SystemModuleInformation lists
+    # one entry per session driver (not per session) -- multi-session
+    # hosts need the caller-session cross-check (R3-10b-iii TODO).
+    build = sys.getwindowsversion().build
+    if kern_ahe != 0:
+        check("WIN32K", "0x772 kernel table: resolved (psi match informational)",
+              w32k_base != 0 and kern_psi != 0
+              and kern_ahe > 0xFFFF800000000000,
+              "w32kbase=0x%X kern_ahe=0x%X psi_match=%d (separate SERVERINFO is a finding)"
+              % (w32k_base, kern_ahe, psi_match))
+    else:
+        check("WIN32K", "0x772 kernel table: unresolved on this build (OK)",
+              psi_match == 0 and w32k_base == 0,
+              "build=%d stage=%d kern_psi=0x%X"
+              % (build, _rsv2, kern_psi))
 
     live = {r[0]: r for r in rows}
     zero_payload = sum(1 for r in rows if r[3] == 0 and r[4] == 0)
@@ -3326,8 +3350,8 @@ def verify_win32k_handles(handle) -> None:
     new_indexes = set()
     if ok_created:
         probe_idx = sorted(h & 0xFFFF for h in probe_handles)
-        count2, diag2, _s2, _a2, _h2, _sc2, _tr2, rows2 = \
-            _win32k_enum_handles(handle)
+        count2, diag2, _s2, _a2, _h2, _sc2, _tr2, rows2 = (
+            lambda *a: a[:7] + (a[12],))(*_win32k_enum_handles(handle))
         live2 = {r[0] for r in rows2}
         new_indexes = live2 - set(live)
         # The created handle's low 16 bits MUST be the table slot index
@@ -3344,8 +3368,8 @@ def verify_win32k_handles(handle) -> None:
     if ok_created:
         for h in probe_handles:
             user32.DestroyAcceleratorTable(h)
-        count3, diag3, _s3, _a3, _h3, _sc3, _tr3, rows3 = \
-            _win32k_enum_handles(handle)
+        count3, diag3, _s3, _a3, _h3, _sc3, _tr3, rows3 = (
+            lambda *a: a[:7] + (a[12],))(*_win32k_enum_handles(handle))
         live3 = {r[0] for r in rows3}
         still_there = new_indexes & live3
         check("WIN32K", "0x772 probe: destroyed accelerators gone again",

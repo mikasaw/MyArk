@@ -11,6 +11,7 @@
 #include "../../../shared/driver/MyArkWin32kIoctl.h"
 
 #define MYARK_TRACE_WIN32K "[win32k] "
+#define MYARK_WIN32K_POOL_TAG 'JBOk'
 
 //
 // PEB/Ldr module-walk offsets. LDR_DATA_TABLE_ENTRY has kept the x64 shape

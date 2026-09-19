@@ -2319,3 +2319,57 @@
 2. 内核记录字段级标定：加速表差分 × 内核表（解决 @0 偏移语义）。
 3. WinEvent 钩子（DESKTOPINFO 链）；dyndata QUERY_MODULE/SSDT
    26100 门控备查；24H2 虚机。
+
+## 2026-09-19 — R3-10b-ii：win32k 内核句柄表暴露落地（0x772 扩展，双机验证）
+
+### 现象
+- 实现会话基址解析器时，最初走 PsWin32kImageBase+IAT 链，实测
+  stage=1：`MmGetSystemRoutineAddress(L"PsWin32kImageBase")` 在 18363
+  返回 NULL——该导出在 1903 不存在（dyndata 的同款解析从未在此构建
+  成功过，SHADOWSSDT 段的 win32k 基址另有来源）。
+
+### 与参考的对比
+- 25_kernel 的 MyArkKernelWin32kBounds（R2-3）早已证明：**win32k
+  三件套出现在 SystemModuleInformation (class 11) 列表里**——尽管
+  它们不在 PsLoadedModuleList。直接扫该列表找 "win32kbase.sys" 取
+  ImageBase，比 IAT 链少两次 PE 解析、无构建相关函数名依赖。
+
+### 修复尝试 / 实现
+- 解析器重写为 ZwQuerySystemInformation(11)（经
+  MmGetSystemRoutineAddress 取函数指针，池缓冲 + 双调用模式），
+  找 win32kbase.sys → ImageBase = 会话基址 → 内核 gSharedInfo =
+  base + 0x213750（profile 行 18362/18363；22631 行留 0 = 干净拒绝）。
+- 0x772 输出头扩展 {Win32kBase, KernelAheList, KernelPsi, PsiMatch,
+  Reserved2(breadcrumb)} → 72 字节头；解析失败带内降级（stage 码）。
+- **实测发现（finding）**：内核 gSharedInfo.psi（0xFFFF8525C0E01040）
+  ≠ 用户副本 psi（0xFFFFF2091040）——两个 SERVERINFO 实例。psi
+  匹配从硬门降级为信息性字段，内核表解析本身以 aheList 内核 VA
+  自洽验证。
+- 1903 解析值与 KDNET 交叉验证完全一致：w32kbase=0xFFFF856207AB0000
+  （=lm）、kern_ahe=0xFFFF8525C0C00000（=round-4 dq）。
+
+### 关键决策回顾
+- 验证脚本的三次自身翻车（解构/返回元组/lambda 索引）全部是
+  "协议扩展后多处同步"的老问题——verify 手工 struct 解析在协议
+  演进时是高频错误源，后续考虑让 R3 侧复用 ctypes 镜像解析。
+- psi 双 SERVERINFO 结论修正了 R3-10a 时"psi 可作运行时自校验"的
+  预设：内核表与用户表是并行的两份结构，不是主从映射。
+- 调试手段：Reserved2 当 breadcrumb（stage 码 / 值片段）+ verify
+  detail 打印，两轮迭代定位到 psi 不相等——比盲改快。
+
+### 结果
+- 1903 [VERIFY] OK：内核表解析成功，w32kbase/kern_ahe 与 KDNET
+  完全一致；22631 [VERIFY] OK：干净 fallback（profile 行待标定）。
+- 875 client 单测全绿。
+
+### TODO
+1. 22631 标定行（KDNET：x win32kbase!gSharedInfo → RVA）。
+2. 内核记录字段解码（@0 小偏移语义）——加速表差分 × 内核表。
+3. R3-10b-iii：USER 定时器枚举（gTimerHashTable 路线，gptmrMaster
+   @0 是 DISPATCHER 头不是 LIST_ENTRY，节点遍历需重新标定）。
+4. 会话标识注意点（验收 P1）：SystemModuleInformation 每会话驱动
+   只列一条（非每会话一条），多会话主机（RDP）上解析出的可能是
+   其它会话的 win32kbase 实例——22631 标定轮需补 heSize 与用户
+   heEntrySize 交叉校验 + 调用者会话核对。
+5. verify WIN32K 段 lambda 位置索引提取脆弱（已三次翻车）——
+   具名解构韧性修复待办。

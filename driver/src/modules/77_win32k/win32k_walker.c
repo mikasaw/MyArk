@@ -17,6 +17,7 @@
 #include "myark_config.h"
 #include "win32k_internal.h"
 #include "Trace.h"
+#include "../../../shared/driver/MyArkPoolAlloc.h"
 
 #if MYARK_MODULE_WIN32K
 
@@ -254,6 +255,158 @@ static BOOLEAN MyArkWin32kResolveSharedInfo(
     return FALSE;
 }
 
+//
+// win32kbase session-base profile (KDNET-calibrated, see CRASH_DEBUG_LOG
+// R3-10b-i/ii). RVA of the KERNEL gSharedInfo inside win32kbase.sys.
+// A zero RVA row = not yet calibrated (the resolver refuses, output
+// falls back to the user-copy fields).
+//
+typedef struct _MYARK_WIN32KBASE_PROFILE {
+    ULONG BuildMin;
+    ULONG BuildMax;
+    ULONG GSharedInfoRva;
+} MYARK_WIN32KBASE_PROFILE;
+
+static const MYARK_WIN32KBASE_PROFILE g_MyArkWin32kBaseProfiles[] = {
+    { 18362, 18363, 0x213750 },
+    { 22621, 22631, 0 },             // TODO(R3-10b-ii): Win11 calibration
+};
+
+static const MYARK_WIN32KBASE_PROFILE*
+MyArkWin32kBaseProfileForBuild(
+    _In_ ULONG Build)
+{
+    ULONG i;
+    for (i = 0; i < ARRAYSIZE(g_MyArkWin32kBaseProfiles); i++) {
+        if (Build >= g_MyArkWin32kBaseProfiles[i].BuildMin
+            && Build <= g_MyArkWin32kBaseProfiles[i].BuildMax
+            && g_MyArkWin32kBaseProfiles[i].GSharedInfoRva != 0) {
+            return &g_MyArkWin32kBaseProfiles[i];
+        }
+    }
+    return NULL;
+}
+
+//
+// RTL_PROCESS_MODULE_INFORMATION mirror (verified against the 1903 list,
+// same shape as the 25_kernel shadow-SSDT walker uses).
+//
+typedef struct _MYARK_WIN32K_SYS_MODULE_ENTRY {
+    HANDLE  Section;            // +0
+    PVOID   MappedBase;         // +8
+    PVOID   ImageBase;          // +16
+    ULONG   ImageSize;          // +24
+    ULONG   Flags;              // +28
+    USHORT  LoadCount;          // +32
+    USHORT  __Unused;           // +34
+    ULONG   __Pad0;             // +36
+    UCHAR   FullPathName[256];  // +40 (296-byte stride)
+} MYARK_WIN32K_SYS_MODULE_ENTRY;
+
+//
+// Resolve the WIN32KBASE session base: the session driver trio appears in
+// SystemModuleInformation (unlike PsLoadedModuleList -- see 25_kernel's
+// shadow-SSDT walker). Find "win32kbase.sys" and take its ImageBase.
+//
+static BOOLEAN
+MyArkWin32kResolveSessionBase(
+    _In_ const MYARK_WIN32KBASE_PROFILE* Profile,
+    _Out_ UINT64* Win32kBase,
+    _Out_ UINT64* KernelAheList,
+    _Out_ UINT64* KernelPsi,
+    _Out_ UINT32* Stage)
+{
+    typedef NTSTATUS (NTAPI *QUERY_FN)(ULONG, PVOID, ULONG, PULONG);
+    QUERY_FN query;
+    UNICODE_STRING name;
+    ULONG needed = 0;
+    NTSTATUS status;
+    PUCHAR buf = NULL;
+    ULONG count;
+    ULONG i;
+    UINT64 w32kbaseImage = 0;
+
+    *Win32kBase = 0;
+    *KernelAheList = 0;
+    *KernelPsi = 0;
+
+    RtlInitUnicodeString(&name, L"ZwQuerySystemInformation");
+    query = (QUERY_FN)MmGetSystemRoutineAddress(&name);
+    if (query == NULL) {
+        *Stage = 1;
+        return FALSE;
+    }
+
+    status = query(11, NULL, 0, &needed);
+    if (needed < 8 || needed > 4 * 1024 * 1024) {
+        *Stage = 2;
+        return FALSE;
+    }
+    buf = (PUCHAR)MyArkAllocatePool(NonPagedPoolNx, needed,
+                                    MYARK_WIN32K_POOL_TAG);
+    if (buf == NULL) {
+        *Stage = 3;
+        return FALSE;
+    }
+    status = query(11, buf, needed, &needed);
+    if (!NT_SUCCESS(status)) {
+        ExFreePoolWithTag(buf, MYARK_WIN32K_POOL_TAG);
+        *Stage = 4;
+        return FALSE;
+    }
+
+    count = *(PULONG)buf;
+    {
+        PUCHAR it = buf + 8;
+        for (i = 0; i < count
+                    && it + sizeof(MYARK_WIN32K_SYS_MODULE_ENTRY) <= buf + needed;
+             i++) {
+            MYARK_WIN32K_SYS_MODULE_ENTRY* m =
+                (MYARK_WIN32K_SYS_MODULE_ENTRY*)it;
+            it += sizeof(MYARK_WIN32K_SYS_MODULE_ENTRY);
+
+            PCSTR tail = NULL;
+            ULONG c;
+            for (c = 0; c < sizeof(m->FullPathName) && m->FullPathName[c]; c++) {
+                if (m->FullPathName[c] == '\\') {
+                    tail = (PCSTR)&m->FullPathName[c + 1];
+                }
+            }
+            if (tail == NULL) {
+                continue;
+            }
+            if (_stricmp(tail, "win32kbase.sys") == 0
+                && m->ImageBase != NULL) {
+                w32kbaseImage = (UINT64)(UINT_PTR)m->ImageBase;
+                break;
+            }
+        }
+    }
+    ExFreePoolWithTag(buf, MYARK_WIN32K_POOL_TAG);
+
+    if (w32kbaseImage == 0) {
+        *Stage = 5;
+        return FALSE;
+    }
+
+    // Kernel gSharedInfo at the calibrated RVA: {psi, aheList, heSize}.
+    {
+        UINT64 kgSharedInfo = w32kbaseImage + Profile->GSharedInfoRva;
+        UINT32 heSize = 0;
+        if (!MyArkWin32kReadU64((PVOID)kgSharedInfo, KernelPsi)
+            || !MyArkWin32kReadU64((PVOID)(kgSharedInfo + 8), KernelAheList)
+            || !MyArkWin32kReadU32((PVOID)(kgSharedInfo + 0x10), &heSize)
+            || heSize == 0 || heSize > 64
+            || *KernelPsi == 0 || *KernelAheList == 0
+            || *KernelAheList < 0xFFFF800000000000ULL) {
+            *Stage = 6;
+            return FALSE;
+        }
+    }
+    *Win32kBase = w32kbaseImage;
+    return TRUE;
+}
+
 NTSTATUS
 MyArkWin32kEnumUserHandles(
     _Out_ PMYARK_WIN32K_USER_HANDLES_OUTPUT Out,
@@ -295,6 +448,42 @@ MyArkWin32kEnumUserHandles(
         || (heEntrySize != 16 && heEntrySize != 24 && heEntrySize != 32)) {
         Out->DiagStatus = (UINT32)STATUS_INVALID_PARAMETER;
         return STATUS_SUCCESS;
+    }
+
+    //
+    // R3-10b-ii: resolve the KERNEL handle table through the win32kbase
+    // session base. Optional capability -- unresolved (un-calibrated
+    // build) leaves the kernel fields at 0 and the user-copy walk stays
+    // authoritative. PsiMatch is the runtime self-check: the kernel
+    // gSharedInfo.psi must equal the user copy's psi.
+    //
+    {
+        RTL_OSVERSIONINFOW os;
+        const MYARK_WIN32KBASE_PROFILE* profile;
+
+        RtlZeroMemory(&os, sizeof(os));
+        os.dwOSVersionInfoSize = sizeof(os);
+        if (NT_SUCCESS(RtlGetVersion(&os))) {
+            profile = MyArkWin32kBaseProfileForBuild(os.dwBuildNumber);
+            if (profile != NULL) {
+                UINT64 w32kBase = 0;
+                UINT64 kAhe = 0;
+                UINT64 kPsi = 0;
+                UINT32 stage = 0;
+                if (MyArkWin32kResolveSessionBase(profile, &w32kBase,
+                                                  &kAhe, &kPsi, &stage)) {
+                    // Measured 1903: kernel gSharedInfo.psi and the user
+                    // copy's psi are DIFFERENT SERVERINFO instances -- the
+                    // mismatch is a finding, not a failure. Report both.
+                    Out->Win32kBase = w32kBase;
+                    Out->KernelAheList = kAhe;
+                    Out->KernelPsi = kPsi;
+                    Out->PsiMatch = (kPsi == psi) ? 1 : 0;
+                } else {
+                    Out->Reserved2 = stage;   // DIAG breadcrumb
+                }
+            }
+        }
     }
 
     for (index = 0; index < MYARK_WIN32K_HE_MAX_SLOTS; index++) {

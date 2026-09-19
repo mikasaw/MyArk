@@ -109,5 +109,10 @@ class MYARK_WIN32K_USER_HANDLES_OUTPUT(ctypes.Structure):
         ("ScannedSlots", ctypes.c_uint32),
         ("Truncated", ctypes.c_uint32),
         ("Reserved", ctypes.c_uint32),
+        ("Win32kBase", ctypes.c_uint64),
+        ("KernelAheList", ctypes.c_uint64),
+        ("KernelPsi", ctypes.c_uint64),
+        ("PsiMatch", ctypes.c_uint32),
+        ("Reserved2", ctypes.c_uint32),
         ("Entries", MYARK_WIN32K_USER_HANDLE_ENTRY * WIN32K_HANDLE_CAP),
     ]

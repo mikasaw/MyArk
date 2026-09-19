@@ -116,5 +116,10 @@ typedef struct _MYARK_WIN32K_USER_HANDLES_OUTPUT {
     UINT32  ScannedSlots;                        // slots scanned before stop
     UINT32  Truncated;                           // 1 = live rows beyond CAP
     UINT32  Reserved;
+    UINT64  Win32kBase;                          // win32kbase session base (0 = unresolved)
+    UINT64  KernelAheList;                       // KERNEL handle table (real pHead; 0 = unresolved)
+    UINT64  KernelPsi;                           // kernel SERVERINFO pointer
+    UINT32  PsiMatch;                            // 1 = kernel psi == user copy psi
+    UINT32  Reserved2;
     MYARK_WIN32K_USER_HANDLE_ENTRY Entries[MYARK_WIN32K_HANDLE_CAP];
 } MYARK_WIN32K_USER_HANDLES_OUTPUT, *PMYARK_WIN32K_USER_HANDLES_OUTPUT;
