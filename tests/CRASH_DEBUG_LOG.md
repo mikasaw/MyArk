@@ -2374,6 +2374,16 @@
 5. verify WIN32K 段 lambda 位置索引提取脆弱（已三次翻车）——
    具名解构韧性修复待办。
 
+### TODO 补充（轮 8，同日）
+- **22631 标定行落地**（KDNET 轮 8，Win11 explorer 上下文）：
+  win32kbase 基址 fffff9ca`f4e00000、gSharedInfo fffff9ca`f5085e80 →
+  **RVA = 0x285e80**（已入 profile 表，22621-22631）。运行时验证：
+  0x772 kernel table 解析成功（w32kbase=0xFFFFF9CAF4E00000 与 lm 一致、
+  kern_ahe=0xFFFFF80171000000 内核 VA、psi_match=0 与双 SERVERINFO
+  finding 一致）。1903 回归 OK。
+- 顺带标定（Win11）：gTimerHashTable RVA=0x288320、gTimerId
+  RVA=0x288720（供 R3-10b-iii 定时器路线用）。
+
 ## 2026-09-19 — R3-10b-iii 前置：内核记录布局经加速表实证 + 定时器路线探测（test2 1903，KDNET 轮 7）
 
 ### 现象

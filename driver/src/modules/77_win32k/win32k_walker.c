@@ -269,7 +269,7 @@ typedef struct _MYARK_WIN32KBASE_PROFILE {
 
 static const MYARK_WIN32KBASE_PROFILE g_MyArkWin32kBaseProfiles[] = {
     { 18362, 18363, 0x213750 },
-    { 22621, 22631, 0 },             // TODO(R3-10b-ii): Win11 calibration
+    { 22621, 22631, 0x285e80 },      // KDNET-calibrated 2026-09-19
 };
 
 static const MYARK_WIN32KBASE_PROFILE*
