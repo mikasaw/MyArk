@@ -3308,9 +3308,9 @@ def verify_win32k_handles(handle) -> None:
     # Resolution is build-profile dependent (22631 row pending). Measured
     # finding: kernel gSharedInfo.psi and the user copy psi are DIFFERENT
     # SERVERINFO instances, so psi_match is informational, not an
-    # invariant. Session identity caveat: SystemModuleInformation lists
-    # one entry per session driver (not per session) -- multi-session
-    # hosts need the caller-session cross-check (R3-10b-iii TODO).
+    # invariant. Session identity: the driver iterates every win32kbase
+    # candidate and keeps the one whose live data validates in the
+    # caller's address space (foreign-session VAs fail the reads).
     build = sys.getwindowsversion().build
     if kern_ahe != 0:
         check("WIN32K", "0x772 kernel table: resolved (psi match informational)",

@@ -348,11 +348,21 @@ typedef struct _MYARK_WIN32K_SYS_MODULE_ENTRY {
 //
 // Resolve the WIN32KBASE session base: the session driver trio appears in
 // SystemModuleInformation (unlike PsLoadedModuleList -- see 25_kernel's
-// shadow-SSDT walker). Find "win32kbase.sys" and take its ImageBase.
+// shadow-SSDT walker). Find every "win32kbase.sys" ImageBase.
 //
-static BOOLEAN
-MyArkWin32kFindSessionImage(
-    _Out_ UINT64* Win32kBase,
+// Session-driver copies exist PER SESSION, so a multi-session host lists
+// several candidates and a blind first-match may belong to a foreign
+// session -- whose VAs are not mapped in the caller's address space and
+// fail every guarded read. Callers must therefore validate candidates
+// against live data (see MyArkWin32kResolveSessionBase / the 0x774
+// walker) instead of trusting the first hit.
+//
+#define MYARK_WIN32K_SESSION_BASE_MAX 8
+
+static ULONG
+MyArkWin32kFindSessionImageCandidates(
+    _Out_ UINT64* Bases,
+    _In_  ULONG   MaxBases,
     _Out_ UINT32* Stage)
 {
     typedef NTSTATUS (NTAPI *QUERY_FN)(ULONG, PVOID, ULONG, PULONG);
@@ -363,33 +373,33 @@ MyArkWin32kFindSessionImage(
     PUCHAR buf = NULL;
     ULONG count;
     ULONG i;
-    UINT64 w32kbaseImage = 0;
+    ULONG found = 0;
 
-    *Win32kBase = 0;
+    *Stage = 0;
 
     RtlInitUnicodeString(&name, L"ZwQuerySystemInformation");
     query = (QUERY_FN)MmGetSystemRoutineAddress(&name);
     if (query == NULL) {
         *Stage = 1;
-        return FALSE;
+        return 0;
     }
 
     status = query(11, NULL, 0, &needed);
     if (needed < 8 || needed > 4 * 1024 * 1024) {
         *Stage = 2;
-        return FALSE;
+        return 0;
     }
     buf = (PUCHAR)MyArkAllocatePool(NonPagedPoolNx, needed,
                                     MYARK_WIN32K_POOL_TAG);
     if (buf == NULL) {
         *Stage = 3;
-        return FALSE;
+        return 0;
     }
     status = query(11, buf, needed, &needed);
     if (!NT_SUCCESS(status)) {
         ExFreePoolWithTag(buf, MYARK_WIN32K_POOL_TAG);
         *Stage = 4;
-        return FALSE;
+        return 0;
     }
 
     count = *(PULONG)buf;
@@ -413,25 +423,37 @@ MyArkWin32kFindSessionImage(
                 continue;
             }
             if (_stricmp(tail, "win32kbase.sys") == 0
-                && m->ImageBase != NULL) {
-                w32kbaseImage = (UINT64)(UINT_PTR)m->ImageBase;
-                break;
+                && m->ImageBase != NULL
+                && found < MaxBases) {
+                BOOLEAN dupe = FALSE;
+                ULONG k;
+                for (k = 0; k < found; k++) {
+                    if (Bases[k] == (UINT64)(UINT_PTR)m->ImageBase) {
+                        dupe = TRUE;
+                        break;
+                    }
+                }
+                if (!dupe) {
+                    Bases[found++] = (UINT64)(UINT_PTR)m->ImageBase;
+                }
             }
         }
     }
     ExFreePoolWithTag(buf, MYARK_WIN32K_POOL_TAG);
 
-    if (w32kbaseImage == 0) {
+    if (found == 0) {
         *Stage = 5;
-        return FALSE;
+        return 0;
     }
-    *Win32kBase = w32kbaseImage;
-    return TRUE;
+    return found;
 }
 
 //
-// Resolve the KERNEL handle table through the win32kbase session base
-// (module-list scan above) plus the calibrated gSharedInfo RVA.
+// Resolve the KERNEL handle table for the CALLER's session: iterate every
+// win32kbase candidate and take the first whose gSharedInfo validates
+// against live data. A foreign session's copy fails the guarded reads
+// (its session VAs are not mapped in the caller's address space), which
+// is exactly the cross-session filter -- no explicit session id needed.
 //
 static BOOLEAN
 MyArkWin32kResolveSessionBase(
@@ -442,36 +464,47 @@ MyArkWin32kResolveSessionBase(
     _Out_ UINT64* KernelPsi,
     _Out_ UINT32* Stage)
 {
-    UINT64 w32kbaseImage = 0;
+    UINT64 bases[MYARK_WIN32K_SESSION_BASE_MAX];
+    ULONG candCount;
+    ULONG i;
 
     *Win32kBase = 0;
     *KernelAheList = 0;
     *KernelPsi = 0;
 
-    if (!MyArkWin32kFindSessionImage(&w32kbaseImage, Stage)) {
+    candCount = MyArkWin32kFindSessionImageCandidates(bases,
+                                                      MYARK_WIN32K_SESSION_BASE_MAX,
+                                                      Stage);
+    if (candCount == 0) {
         return FALSE;
     }
 
-    // Kernel gSharedInfo at the calibrated RVA: {psi, aheList, heSize}.
-    {
-        UINT64 kgSharedInfo = w32kbaseImage + Profile->GSharedInfoRva;
+    for (i = 0; i < candCount; i++) {
+        UINT64 kgSharedInfo = bases[i] + Profile->GSharedInfoRva;
+        UINT64 psi = 0;
+        UINT64 aheList = 0;
         UINT32 heSize = 0;
-        if (!MyArkWin32kReadU64((PVOID)kgSharedInfo, KernelPsi)
-            || !MyArkWin32kReadU64((PVOID)(kgSharedInfo + 8), KernelAheList)
+
+        if (!MyArkWin32kReadU64((PVOID)kgSharedInfo, &psi)
+            || !MyArkWin32kReadU64((PVOID)(kgSharedInfo + 8), &aheList)
             || !MyArkWin32kReadU32((PVOID)(kgSharedInfo + 0x10), &heSize)
             || heSize == 0 || heSize > 64
             // kernel/user are separate SHAREDINFO instances (psi mismatch
             // finding) -- their strides must still agree, else the
             // kernel-record walk below would read misaligned data.
             || heSize != HeEntrySize
-            || *KernelPsi == 0 || *KernelAheList == 0
-            || *KernelAheList < 0xFFFF800000000000ULL) {
-            *Stage = 6;
-            return FALSE;
+            || psi == 0 || aheList == 0
+            || aheList < 0xFFFF800000000000ULL) {
+            continue;       // foreign-session or garbage copy: try next
         }
+        *Win32kBase = bases[i];
+        *KernelAheList = aheList;
+        *KernelPsi = psi;
+        return TRUE;
     }
-    *Win32kBase = w32kbaseImage;
-    return TRUE;
+
+    *Stage = 6;     // candidates existed but none validated for this session
+    return FALSE;
 }
 
 NTSTATUS
@@ -862,9 +895,32 @@ MyArkWin32kEnumTimers(
     Out->TimerHashRva = profile->GTimerHashTableRva;
 
     {
-        UINT32 stage = 0;
-        if (!MyArkWin32kFindSessionImage(&sessionBase, &stage)) {
-            Out->Reserved2 = stage;         // DIAG breadcrumb
+        // Cross-session filter: keep the candidate whose table lives in
+        // the CALLER's session (foreign-session VAs fail the guarded read
+        // or carry a non-canonical head).
+        UINT64 bases[MYARK_WIN32K_SESSION_BASE_MAX];
+        UINT32 cstage = 0;
+        ULONG candCount = MyArkWin32kFindSessionImageCandidates(
+            bases, MYARK_WIN32K_SESSION_BASE_MAX, &cstage);
+        ULONG ci;
+        BOOLEAN resolved = FALSE;
+        if (candCount == 0) {
+            Out->Reserved2 = cstage;        // DIAG breadcrumb
+            Out->DiagStatus = (UINT32)STATUS_NOT_FOUND;
+            return STATUS_SUCCESS;
+        }
+        for (ci = 0; ci < candCount && !resolved; ci++) {
+            UINT64 candTable = bases[ci] + profile->GTimerHashTableRva;
+            UINT64 head0 = 0;
+            if (MyArkWin32kReadU64((PVOID)candTable, &head0)
+                && (head0 == 0
+                    || head0 >= 0xFFFF800000000000ULL)) {
+                sessionBase = bases[ci];
+                resolved = TRUE;
+            }
+        }
+        if (!resolved) {
+            Out->Reserved2 = 6;   // candidates but none validates
             Out->DiagStatus = (UINT32)STATUS_NOT_FOUND;
             return STATUS_SUCCESS;
         }
@@ -1020,9 +1076,32 @@ MyArkWin32kEnumEventHooks(
     Out->WinEventHooksRva = profile->GpWinEventHooksRva;
 
     {
-        UINT32 stage = 0;
-        if (!MyArkWin32kFindSessionImage(&sessionBase, &stage)) {
-            Out->Reserved2 = stage;         // DIAG breadcrumb
+        // Cross-session filter: keep the candidate whose hook-list head
+        // READS as live data in the caller's address space (foreign-
+        // session VAs fail the guarded read or carry a junk head).
+        UINT64 bases[MYARK_WIN32K_SESSION_BASE_MAX];
+        UINT32 cstage = 0;
+        ULONG candCount = MyArkWin32kFindSessionImageCandidates(
+            bases, MYARK_WIN32K_SESSION_BASE_MAX, &cstage);
+        ULONG ci;
+        BOOLEAN resolved = FALSE;
+        if (candCount == 0) {
+            Out->Reserved2 = cstage;        // DIAG breadcrumb
+            Out->DiagStatus = (UINT32)STATUS_NOT_FOUND;
+            return STATUS_SUCCESS;
+        }
+        for (ci = 0; ci < candCount && !resolved; ci++) {
+            UINT64 candHead = bases[ci] + profile->GpWinEventHooksRva;
+            UINT64 first = 0;
+            if (MyArkWin32kReadU64((PVOID)candHead, &first)
+                && (first == 0
+                    || first >= 0xFFFF800000000000ULL)) {
+                sessionBase = bases[ci];
+                resolved = TRUE;
+            }
+        }
+        if (!resolved) {
+            Out->Reserved2 = 6;   // candidates but none validates
             Out->DiagStatus = (UINT32)STATUS_NOT_FOUND;
             return STATUS_SUCCESS;
         }
