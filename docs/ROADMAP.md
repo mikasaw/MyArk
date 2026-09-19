@@ -9,7 +9,7 @@
 
 ## 当前完成基线（截至 2026-09-15）
 
-30 模块 / 42 协议头定义 116 个 IOCTL（注册分发面约 94）/ 137 项虚机断言。进程与线程全套（枚举/终止/挂起/PPL/完整性/可见性/DKOM/注入 DLL/CrossView/详情）、物理与虚拟内存读写+扫描、句柄/ALPC/Section、SSDT 枚举、回调枚举注销、WFP、win32k/键盘探针、存储/设备五件套、安全姿态三条、WSL/HWID 基座/调试输出/BugCheck 诊断/Safety 门/Preflight、R3 file 五命令、history 加密、DPI 缩放。
+31 模块 / 42 协议头定义 118 个 IOCTL（注册分发面约 96）/ 147 项虚机断言。进程与线程全套（枚举/终止/挂起/PPL/完整性/可见性/DKOM/注入 DLL/CrossView/详情）、物理与虚拟内存读写+扫描、句柄/ALPC/Section、SSDT 枚举、回调枚举注销、WFP、win32k/键盘探针、存储/设备五件套、安全姿态三条、WSL/HWID 基座/调试输出/BugCheck 诊断/Safety 门/Preflight、R3 file 五命令、history 加密、DPI 缩放。
 
 ---
 
@@ -106,6 +106,7 @@
 | R3-2 | **对抗强化 T-C：R0 shellcode 注入 ✅（2026-09-16 晚）** | 0x877 INJECT_SHELLCODE：ZwAlloc→MmCopyVirtualMemory→回读校验→ZwProtect(ER)→KeInsertQueueApc USER APC（ZwCreateThreadEx 非导出；目标线程须可警醒）；≤256KB；PPL 天然拒绝；TOKEN 门控；verify INJECT 段 4 断言含交付证明，双 build 全绿 | 1-2 天 |
 | R3-3 | 定时器/DPC 枚举 ✅（2026-09-17） | 0x8A4 逐 CPU TimerTable（TimerExpiry+桶，解码 KiWaitNever/Always 混淆的 KTIMER.Dpc）+ 0x8A5 DPC 队列快照；Tier C 双构建 profile（18362/22621，KDNET 实测）；1903 实测 170 timers owner 全解析；verify TIMERDPC 2 断言双绿 | 2 天 |
 | R3-4 | PspCidTable 全表 + DKOM 隐藏检测 ✅（2026-09-17） | 0xA0D 逐页走查 PspCidTable（Tier C profile 18362=0x574530 / 22621=0xD1EC30），条目解码 obj=(entry>>16)\|0xFFFF…，ObGetObjectType 判别进程/线程，join ActiveProcessLinks 标记 HIDDEN；DKOM hide 往返双绿；修复既有 DKOM 蓝屏（0x1D8 Tier C 硬编码偏移改 Tier B 运行时发现）；内核对象/IPC 摘要留后续 | 2 天 |
+| R3-4b | 内核对象/IPC 摘要（R3-4 续作）✅（2026-09-19） | 91_object 模块（'KOBJ'，0x910/0x911）：全导出 Zw 面、零 profile——0x910 对象目录走查（\ObjectTypes 67/70 类型、\ 56/65 项），0x911 NPFS/MSFS 根枚举（尾部反斜杠 + backup-intent + "*" 模式三件套），管道集合与 win32 视图零差异（24==24 / 51==51）；踩坑三连：METHOD_BUFFERED in/out 同缓冲先拷输入、裸设备名=控制设备句柄拒目录查询、单条记录+字符串须同缓冲；client `object dir/types/ipc`；verify KOBJ 10 断言双绿 | 1 天 |
 | R3-5 | 进程/线程 RUNTIME_FIELDS 采样补全 ✅（2026-09-16 晚） | 0xA03=ProcessVmCounters 精确长度级联 {80,88,72,128}+CycleTime(class 26)；0xA12=KeQueryRuntimeThread+Tier C StateFlags；verify RUNTIME 段 3 断言，双 build 全绿 | 1 天 |
 | R3-6 | 安全审计广度 ✅（2026-09-17） | 0x7D3 SECURITY_POSTURE：CPUID hypervisor 探测 + VBS/HVCI 注册表三态 + AppLocker SrpV2 执法状态 + WDAC 活动策略文件计数（Zw 目录枚举，与 guest 对账一致）+ BAM 服务状态；双 build 全绿 | 1.5 天 |
 | R3-7 | Minifilter 清单 + 旁路 PID ✅（2026-09-17） | 0x818 FltEnumerateFilters+ASI 清单（11 项实测含自身 altitude）；0x819 采样器旁路 PID（token 门控，ADD/REMOVE/CLEAR/QUERY + BypassDrops 计数）；双 build 全绿 | 1.5 天 |

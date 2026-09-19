@@ -71,7 +71,7 @@ driver/
 
     modules/                                 # 业务模块 (functional)
       00_hello                               # 机制烟测
-      10_process ... 87_actions              # 30 functional modules
+      10_process ... 87_actions              # 31 functional modules
 ```
 
 ### 入口流
@@ -243,7 +243,12 @@ shared/driver/ioctl_protocol.h
 0x710-0x71F  : 71_callback (C)
 ...
 0x870-0x87F  : 87_actions  (A)
+0x900-0x90F  : 00_hello    (smoke)
+0x910-0x91F  : 91_object   (kernel_object, R3-4b)
 ```
+
+> 注：这张映射是按"每模块一个 0x?N0 子块"的原则分配的示意表；实际
+> 逐码清单以 `shared/driver/MyArk*Ioctl.h` 与 0x004 CapabilityList 为准。
 
 ### 通用请求头 (部分模块)
 

@@ -22,9 +22,9 @@ module gating, plus a Python user-mode (R3) UI/CLI.
 >   liability for misuse or resulting damage.
 
 - Single `MyArkCore.sys` (KMDF, non-PnP control device)
-- 112 IOCTL protocol definitions (~90 registered on the dispatch surface), covering
+- 118 IOCTL protocol definitions (~96 registered on the dispatch surface), covering
   four quadrants (pure R3 / R0 read + R3 display / R0-only / hybrid)
-- 30 driver modules, compile-gated via `#if MYARK_MODULE_<NAME>`, runtime
+- 31 driver modules, compile-gated via `#if MYARK_MODULE_<NAME>`, runtime
   start/stop via registry `Modules\<Name>=0/1`
 - R3: Python 3.14 + Tkinter UI / argparse CLI
 - Three-layer search: left-pane filter + Ctrl+P command palette + sidebar advanced
@@ -106,7 +106,7 @@ project has since moved to an R-series hardening roadmap (see `docs/ROADMAP.md`)
 |  |   ioctl_helpers.h      -- in/out buffer macros           | |
 |  +---------------------------------------------------------+ |
 |                                                               |
-|  +-- modules/ (30 functional + 2 smoke) -------------------+ |
+|  +-- modules/ (31 functional + 2 smoke) -------------------+ |
 |  |   00_hello             -- mechanism smoke test            | |
 |  |   10_process           -- process enumeration             | |
 |  |   11_thread            -- thread enumeration              | |

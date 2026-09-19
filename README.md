@@ -22,8 +22,8 @@
 > [LICENSE](LICENSE) with no liability for misuse.
 
 - 单个 `MyArkCore.sys` (KMDF,非 PnP Control Device)
-- 112 个 IOCTL 协议定义 (注册分发面约 90),覆盖四象限(纯 R3 / R0 读 + R3 展示 / 必须 R0 / 混合)
-- 30 个驱动模块,编译期 `#if MYARK_MODULE_<NAME>` 宏门控,运行时通过注册表 `Modules\<Name>=0/1` 启停
+- 118 个 IOCTL 协议定义 (注册分发面约 96),覆盖四象限(纯 R3 / R0 读 + R3 展示 / 必须 R0 / 混合)
+- 31 个驱动模块,编译期 `#if MYARK_MODULE_<NAME>` 宏门控,运行时通过注册表 `Modules\<Name>=0/1` 启停
 - R3 Python 3.14 + Tkinter UI / argparse CLI
 - 三层搜索:左栏过滤 + Ctrl+P 命令面板 + 侧栏高级搜索 (8 scope + 3 mode),中文/拼音支持 (pypinyin)
 - 多窗口增强:详情 / 比较 / 过滤构造 / 操作历史 浮窗 (S9.2)
@@ -92,7 +92,7 @@ Windows ARK(Anti-Rootkit)工具用于检测 / 排查内核态 rootkit、隐藏�
 |  |   ioctl_helpers.h      -- 输入/输出缓冲宏                | |
 |  +---------------------------------------------------------+ |
 |                                                               |
-|  +-- modules/ (30 functional + 2 smoke) -------------------+ |
+|  +-- modules/ (31 functional + 2 smoke) -------------------+ |
 |  |   00_hello             -- 机制烟测                       | |
 |  |   10_process           -- 进程枚举 (R3 优先 + R0 备用)  | |
 |  |   11_thread            -- 线程枚举                       | |
