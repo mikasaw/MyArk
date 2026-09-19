@@ -55,9 +55,10 @@ def _cmd_handles(args: argparse.Namespace) -> int:
     try:
         r = P.enum_user_handles(client)
         diag = f" diag=0x{r.diag_status:08X}" if r.diag_status else ""
+        tr = f" truncated={r.truncated}" if r.truncated else ""
         print(f"# win32k handles: source={r.source} count={r.count}"
               f" shared_info=0x{r.shared_info:X} ahe_list=0x{r.ahe_list:X}"
-              f" he_entry_size={r.he_entry_size} scanned={r.scanned_slots}{diag}")
+              f" he_entry_size={r.he_entry_size} scanned={r.scanned_slots}{tr}{diag}")
         for e in r.entries:
             if args.type is None or e.type == args.type:
                 print(f"  [{e.index:6d}] {e.type_name:<12} obj=0x{e.kernel_object:016X}"
@@ -79,10 +80,11 @@ def _cmd_timers(_args: argparse.Namespace) -> int:
     try:
         r = P.enum_timers(client)
         diag = f" diag=0x{r.diag_status:08X}" if r.diag_status else ""
+        tr = f" truncated={r.truncated}" if r.truncated else ""
         print(f"# win32k timers: source={r.source} count={r.count}"
               f" hash_table=0x{r.timer_hash_table:X} session_base=0x{r.session_base:X}"
               f" buckets={r.bucket_count} node_size=0x{r.node_size:X}"
-              f" scanned={r.scanned_buckets}{diag}")
+              f" scanned={r.scanned_buckets}{tr}{diag}")
         for e in r.entries:
             proc = f" proc=0x{e.timer_proc:X}" if e.timer_proc else ""
             print(f"  [{e.index:3d}] id={e.timer_id:#06x} {e.kind:<7}"

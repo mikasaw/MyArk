@@ -2535,3 +2535,16 @@
   显式 `call vm_env_win11.bat`。
 - Win11 guest 快照回滚丢 python312：embeddable 包重装脚本
   （build/vm_win11_python_setup.cmd，schtasks 方式）已沉淀。
+
+### 追记 2（同日晚）：1903 哈希占空比定量 + 断言降为信息性
+- 行级诊断（同 boot 创建 5 标记 30 分钟 elapse + 3 轮 re-arm 采样）：
+  自有标记仅 2/5 在链（id/elapse 解码全对），且 verify 轮观测过
+  8 样本全 0 的运行（当时 11 行 = 6 系统 + 5 历史泄漏；KillTimer
+  顺带清了泄漏行 11→6）。结论：1903 上活定时器节点在
+  gTimerHashTable 的占空比约 40% 且随机相位——可见性是随机面，
+  不是确定性不变量。
+- 断言调整：marker 可见性检查恒 PASS（信息性），0 现象=本 run 只
+  采到离相节点；严格解码（elapse 60000 / 单 pti / 非零 window）仅在
+  有现象时执行。基线解析/64 桶走查/KillTimer 全 ACK 保持严格。
+- 顺带落实评审 P2：0x773 进 MATRIX_READ_ONLY（计数标签 48→58 修正，
+  旧标签本就过期）；CLI handles/timers 头行输出 truncated。
