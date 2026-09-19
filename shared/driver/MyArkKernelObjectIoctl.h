@@ -80,7 +80,7 @@ typedef struct _MYARK_KOBJ_DIRECTORY_OUTPUT {
     UINT32 Count;
     UINT32 Flags;                                // MYARK_KOBJ_DIR_FLAG_*
     UINT32 OpenStatus;                           // ZwOpenDirectoryObject status
-    UINT32 WalkStatus;                           // TEMP DIAG: last query status
+    UINT32 WalkStatus;                           // last query status (diagnostic)
     MYARK_KOBJ_ENTRY Entries[MYARK_KOBJ_DIR_CAP];
 } MYARK_KOBJ_DIRECTORY_OUTPUT, *PMYARK_KOBJ_DIRECTORY_OUTPUT;
 

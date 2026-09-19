@@ -23,9 +23,10 @@ def register(
         ui_factory=None,
         cli_setup=cli._setup_cli,
         description=(
-            "win32k module (R0 GUI thread + syscall-table hook enum; both "
-            "stubs for S7.3; 2 IOCTLs: ENUMERATE_GUI_THREADS / "
-            "ENUMERATE_HOOKS)"
+            "win32k module (R0 GUI thread + syscall-table hook enum, both "
+            "still S7.3 stubs; R3-10a USER handle table via gSharedInfo: "
+            "windows/hooks/menus; 3 IOCTLs: ENUMERATE_GUI_THREADS / "
+            "ENUMERATE_HOOKS / ENUM_USER_HANDLES)"
         ),
         extra={"r0_only": True, "read_only": True},
     )

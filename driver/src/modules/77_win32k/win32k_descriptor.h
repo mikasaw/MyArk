@@ -25,6 +25,13 @@ NTSTATUS MyArkWin32kIoctlEnumerateHooks(
     _In_  size_t     OutputBufferLength,
     _Out_ size_t*    BytesReturned);
 
+NTSTATUS MyArkWin32kIoctlEnumerateUserHandles(
+    _In_  WDFDEVICE  Device,
+    _In_  WDFREQUEST Request,
+    _In_  size_t     InputBufferLength,
+    _In_  size_t     OutputBufferLength,
+    _Out_ size_t*    BytesReturned);
+
 extern MYARK_MODULE_DESCRIPTOR g_MyArkModule_Win32k;
 
 #endif // MYARK_MODULE_WIN32K

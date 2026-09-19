@@ -106,8 +106,73 @@ def enumerate_hooks(client: Optional[ArkClient]) -> HooksReport:
     return r0 if r0 is not None else r3
 
 
+# --- R3-10a: USER handle table (user32!gSharedInfo) -------------------------
+
+
+@dataclass
+class UserHandleEntry:
+    index: int = 0
+    type: int = 0
+    type_name: str = ""
+    flags: int = 0
+    kernel_object: int = 0
+    user_pointer: int = 0
+
+
+@dataclass
+class UserHandlesReport:
+    count: int = 0
+    diag_status: int = 0
+    truncated: int = 0
+    shared_info: int = 0
+    ahe_list: int = 0
+    he_entry_size: int = 0
+    scanned_slots: int = 0
+    entries: list = None
+    source: str = "r0"
+
+    def __post_init__(self):
+        if self.entries is None:
+            self.entries = []
+
+
+def enum_user_handles(client: Optional[ArkClient]) -> UserHandlesReport:
+    if client is None:
+        raise ConnectionError("driver not available")
+
+    out_size = ctypes.sizeof(P.MYARK_WIN32K_USER_HANDLES_OUTPUT)
+    out_buf = P.MYARK_WIN32K_USER_HANDLES_OUTPUT()
+    bytes_returned = client.ioctl(P.IOCTL_MYARK_WIN32K_ENUM_USER_HANDLES,
+                                  (ctypes.c_ubyte * 0)(), out_buf)
+    if bytes_returned < out_size:
+        raise ConnectionError(
+            f"short read: {bytes_returned} < {out_size}")
+    rows = []
+    for i in range(min(out_buf.Count, len(out_buf.Entries))):
+        e = out_buf.Entries[i]
+        rows.append(UserHandleEntry(
+            index=e.Index,
+            type=e.Type,
+            type_name=P.WIN32K_TYPE_NAMES.get(e.Type, f"Type{e.Type}"),
+            flags=e.Flags,
+            kernel_object=e.KernelObject,
+            user_pointer=e.UserPointer,
+        ))
+    return UserHandlesReport(
+        count=out_buf.Count,
+        diag_status=out_buf.DiagStatus,
+        truncated=out_buf.Truncated,
+        shared_info=out_buf.SharedInfo,
+        ahe_list=out_buf.AheList,
+        he_entry_size=out_buf.HeEntrySize,
+        scanned_slots=out_buf.ScannedSlots,
+        entries=rows,
+    )
+
+
 __all__ = [
     "GuiThread", "GuiThreadsReport",
     "HookEntry", "HooksReport",
-    "enumerate_gui_threads", "enumerate_hooks",
+    "UserHandleEntry", "UserHandlesReport",
+    "enumerate_gui_threads", "enumerate_hooks", "enum_user_handles",
 ]

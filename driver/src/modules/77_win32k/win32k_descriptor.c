@@ -36,6 +36,10 @@ MYARK_IOCTL_ENTRY g_MyArkWin32kIoctlTable[] = {
         IOCTL_MYARK_WIN32K_ENUMERATE_HOOKS,
         MyArkWin32kIoctlEnumerateHooks,
     },
+    {
+        IOCTL_MYARK_WIN32K_ENUM_USER_HANDLES,
+        MyArkWin32kIoctlEnumerateUserHandles,
+    },
 };
 
 MYARK_MODULE_DESCRIPTOR g_MyArkModule_Win32k = {

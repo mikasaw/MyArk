@@ -2147,3 +2147,62 @@
 3. 24H2 (26100+) 虚机仍缺——环境项。
 4. 若未来要"每类型对象计数"（PCHunter 式），需 ObTypeIndexTable
    Tier C profile——本切片刻意不做。
+
+## 2026-09-19 — R3-10a win32k 用户对象句柄表：0x772 落地 + aheList 用户副本布局校准（test2 1903 + Win11 22631）
+
+### 现象
+- R3-10（win32k 补全）第一切片：77_win32k 模块从 S7.3 stub 做实。
+  路线选型：窗口/钩子面走 user32!gSharedInfo 句柄表（全导出面 + PEB
+  走查，零 win32k 内核偏移），win32k 定时器/WinEvent 深枚举留 Tier C
+  下一切片。
+- 首轮 1903 实测：0x772 open/解析全通（gSharedInfo=0x7FFAB43D7FC0，
+  PEB→Ldr→EAT 三级全对），但 Count=0——走查把全部记录判成空闲。
+
+### 与参考的对比
+- 经典公开资料（XP~Win7 时代）HANDLEENTRY = {pHead, pUser, bType,
+  bFlags, uwSpare} 16 字节，type 在记录头偏移 12~16；按此实现全部判空。
+- 宿主机/guest 差分探针（build/probe_win32k.py、probe_ahe.py）：创建 3
+  个加速表前后对 aheList 用户映射做逐槽 diff，槽位号 [185,189,205]
+  与新句柄低 16 位精确对应 → 步长 32 与槽位模型证实；变化字节为
+  @24=0x0008（TYPE_ACCELTABLE）、@26=代际。
+
+### 修复尝试（按定位顺序）
+1. HeEntrySize 硬性要求 16 → 实测 32，直接拒走。改白名单 {16,24,32}
+   并按 stride 适配解码。
+2. 走查故障（映射区页尾 0xC0000005）被当成 IOCTL 失败状态返回 →
+   改带内 DiagStatus（有行时区域末尾 = 干净停止）。
+3. "pHead 与 type 双零 = 空闲"判据误杀：用户映射副本**抹零内核指针**，
+   活记录可能只有 @8 小偏移（0x6C4）+ @24 类型。改按 type@24 ∈
+   1..0x40 判活（USHORT @26 是代际/unique，释放后残留非零字节，
+   任意非零判据会误判 + 多出 150 行幽灵行）。
+4. guest 探针 CTL_CODE 的 METHOD 位误写 2（OUT_DIRECT）→ 全部
+   err=1，一度误导为驱动问题。用户态 DeviceIoControl 的
+   METHOD_BUFFERED=0。
+
+### 关键决策回顾
+- Tier B 优先再胜：PEB.Ldr / LDR_DATA_TABLE_ENTRY / SHAREDINFO 头部
+  / HANDLEENTRY 步长全部跨构建稳定，1903 与 22631 同码直绿，
+  免掉一轮 KDNET 校准。
+- 验证设计以**差分为真值**：加速表创建/销毁 → 新槽位集合出现又消失
+  （1903: [371,373,375]、22631: [1041,1119,1409]，与句柄低 16 位
+  精确对应），不依赖任何未解码字段的语义。
+- 内核指针被用户副本掩码 = Windows 的内核地址泄漏防护的一部分，
+  ARK 语义上 pHead 需 Tier C 内核侧补齐（R3-10b）。
+- 诊断基建：guest 探针必须 use GetLastResult 语义正确
+  （use_last_error=True）、CTL_CODE method 位为 0；"先怀疑探针再
+  怀疑驱动"省了两轮盲调。
+
+### 结果
+- 1903 [VERIFY] OK：0x772 count=316、accel 探针 [371,373,375] 精确；
+  Win11 22631 [VERIFY] OK：count=1129、探针 [1041,1119,1409]。
+- 中途 1903 出现 MUTTX PREPARE err=1450 连续失败——与 win32k 无关，
+  硬重置 guest 后消失（多轮部署后的 guest 状态劣化，第 N 次验证
+  AGENTS §3 纪律）。
+- client `myark win32k handles [--type N]`；875 单测全绿。
+
+### TODO
+1. R3-10b：win32k 定时器/WinEvent 钩子深枚举（Tier C，需 KDNET 校准
+   win32k 会话空间偏移）；pHead 内核指针的内核侧补齐。
+2. dyndata QUERY_MODULE/QUERY_SSDT 的 26100 门控备查（KLDR/SSDT
+   布局跨构建历史稳定，风险低）。
+3. 24H2 虚机（环境项）。

@@ -56,3 +56,58 @@ class MYARK_WIN32K_HOOKS_OUTPUT(ctypes.Structure):
         ("Reserved", ctypes.c_uint32),
         ("Entries", MYARK_WIN32K_HOOK_ENTRY * 1),
     ]
+
+
+# --- R3-10a: USER handle table (user32!gSharedInfo.aheList) -----------------
+
+IOCTL_MYARK_WIN32K_ENUM_USER_HANDLES = _ctl_code(0x772)
+
+WIN32K_HANDLE_CAP = 2048
+
+# Classic win32k TYPE_* user-object ids.
+WIN32K_TYPE_FREE = 0
+WIN32K_TYPE_WINDOW = 1
+WIN32K_TYPE_MENU = 2
+WIN32K_TYPE_ICON = 3
+WIN32K_TYPE_SETWINDOWPOS = 4
+WIN32K_TYPE_HOOK = 5
+WIN32K_TYPE_CLIPDATA = 6
+WIN32K_TYPE_CALLPROC = 7
+WIN32K_TYPE_ACCELTABLE = 8
+WIN32K_TYPE_DDEACCESS = 9
+WIN32K_TYPE_DDECONV = 10
+WIN32K_TYPE_DDERTACK = 11
+WIN32K_TYPE_MONITOR = 12
+WIN32K_TYPE_KBDLAYOUT = 13
+
+WIN32K_TYPE_NAMES = {
+    0: "Free", 1: "Window", 2: "Menu", 3: "Icon", 4: "SetWindowPos",
+    5: "Hook", 6: "ClipData", 7: "CallProc", 8: "AccelTable",
+    9: "DdeAccess", 10: "DdeConv", 11: "DdeRTrack", 12: "Monitor",
+    13: "KbdLayout", 14: "KbdFile", 16: "DdeTheip", 17: "Desk",
+}
+
+
+class MYARK_WIN32K_USER_HANDLE_ENTRY(ctypes.Structure):
+    _fields_ = [
+        ("Index", ctypes.c_uint32),
+        ("Type", ctypes.c_uint32),
+        ("Flags", ctypes.c_uint32),
+        ("Reserved", ctypes.c_uint32),
+        ("KernelObject", ctypes.c_uint64),
+        ("UserPointer", ctypes.c_uint64),
+    ]
+
+
+class MYARK_WIN32K_USER_HANDLES_OUTPUT(ctypes.Structure):
+    _fields_ = [
+        ("Count", ctypes.c_uint32),
+        ("DiagStatus", ctypes.c_uint32),
+        ("SharedInfo", ctypes.c_uint64),
+        ("AheList", ctypes.c_uint64),
+        ("HeEntrySize", ctypes.c_uint32),
+        ("ScannedSlots", ctypes.c_uint32),
+        ("Truncated", ctypes.c_uint32),
+        ("Reserved", ctypes.c_uint32),
+        ("Entries", MYARK_WIN32K_USER_HANDLE_ENTRY * WIN32K_HANDLE_CAP),
+    ]

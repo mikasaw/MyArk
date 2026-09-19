@@ -1,16 +1,15 @@
 // MyArk win32k module: shared IOCTL protocol between R0 and R3.
 //
-// Function range 0x770..0x771 reserved for the win32k module (S7.3).
-// Win32k inspection is read-only for S7.3: the IOCTL set enumerates
-// GUI threads and any registered win32k hooks on the running build.
-// Mutation IOCTLs are reserved for the S7.3-fix stage.
+// Function range 0x770..0x772. Win32k inspection is read-only:
+//   0x770  ENUMERATE_GUI_THREADS - S7.3 stub (Count=0)
+//   0x771  ENUMERATE_HOOKS       - S7.3 stub (Count=0)
+//   0x772  ENUM_USER_HANDLES     - R3-10a: caller-process USER handle
+//                                  table via user32!gSharedInfo (Tier B)
 //
-// The 2 IOCTLs:
-//
-//   0x770  ENUMERATE_GUI_THREADS - List all GUI threads
-//   0x771  ENUMERATE_HOOKS       - List win32k hooks (syscall table)
-//
-// All 2 IOCTLs use the MyArk METHOD_BUFFERED convention.
+// All IOCTLs use the MyArk METHOD_BUFFERED convention. Threat model note:
+// 0x772 dereferences caller-supplied user data (gSharedInfo/aheList), but
+// only through a guarded reader inside the caller's own context -- the
+// device SDDL (SYSTEM+Admins) matches the rest of the forensic surface.
 
 #pragma once
 
@@ -74,3 +73,48 @@ typedef struct _MYARK_WIN32K_HOOKS_OUTPUT {
     UINT32  Reserved;
     MYARK_WIN32K_HOOK_ENTRY Entries[1];
 } MYARK_WIN32K_HOOKS_OUTPUT, *PMYARK_WIN32K_HOOKS_OUTPUT;
+
+// ---------------------------------------------------------------------------
+// 0x772 ENUM_USER_HANDLES (R3-10a).
+//
+// Walks the caller-process USER handle table through user32!gSharedInfo
+// (resolved via the caller's PEB->Ldr module list + user32 export table --
+// Tier B, no win32k internal offsets). One row per live handle entry
+// {index, kernel object (win32k session space), user mirror, type, flags}.
+// Covers windows / menus / icons / hooks / call procedures / accelerator
+// tables ... session-wide. Must run in the context of a GUI process (the
+// IOCTL caller), PASSIVE_LEVEL.
+//
+// Type ids are the classic win32k TYPE_* values (TYPE_FREE=0, TYPE_WINDOW=1,
+// TYPE_MENU=2, TYPE_ICON=3, TYPE_SETWINDOWPOS=4, TYPE_HOOK=5, ...).
+// Calibrated on 1903/22631 user-mapped aheList (HeEntrySize=32): USHORT
+// type @24, unique/generation @26; the kernel pointer field @0 is masked
+// to 0 in the user copy. Liveness = type in 1..0x40; a freed slot can
+// retain stale generation bytes, so any-nonzero is NOT a live test.
+// ---------------------------------------------------------------------------
+
+#define IOCTL_MYARK_WIN32K_ENUM_USER_HANDLES \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x772, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define MYARK_WIN32K_HANDLE_CAP               2048
+
+typedef struct _MYARK_WIN32K_USER_HANDLE_ENTRY {
+    UINT32  Index;                               // slot index in aheList
+    UINT32  Type;                                // win32k TYPE_* raw value
+    UINT32  Flags;                               // HANDLEENTRY.bFlags raw
+    UINT32  Reserved;
+    UINT64  KernelObject;                        // HANDLEENTRY.pHead (win32k)
+    UINT64  UserPointer;                         // HANDLEENTRY.pUser
+} MYARK_WIN32K_USER_HANDLE_ENTRY, *PMYARK_WIN32K_USER_HANDLE_ENTRY;
+
+typedef struct _MYARK_WIN32K_USER_HANDLES_OUTPUT {
+    UINT32  Count;                               // rows written
+    UINT32  DiagStatus;                          // NTSTATUS of deepest failure
+    UINT64  SharedInfo;                          // user32!gSharedInfo VA
+    UINT64  AheList;                             // handle table base
+    UINT32  HeEntrySize;                         // measured 32 (16/24/32 accepted)
+    UINT32  ScannedSlots;                        // slots scanned before stop
+    UINT32  Truncated;                           // 1 = live rows beyond CAP
+    UINT32  Reserved;
+    MYARK_WIN32K_USER_HANDLE_ENTRY Entries[MYARK_WIN32K_HANDLE_CAP];
+} MYARK_WIN32K_USER_HANDLES_OUTPUT, *PMYARK_WIN32K_USER_HANDLES_OUTPUT;

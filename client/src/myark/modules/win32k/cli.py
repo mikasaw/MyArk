@@ -48,10 +48,34 @@ def _cmd_hooks(_args: argparse.Namespace) -> int:
                 pass
 
 
+def _cmd_handles(args: argparse.Namespace) -> int:
+    client = _open_or_complain()
+    try:
+        r = P.enum_user_handles(client)
+        diag = f" diag=0x{r.diag_status:08X}" if r.diag_status else ""
+        print(f"# win32k handles: source={r.source} count={r.count}"
+              f" shared_info=0x{r.shared_info:X} ahe_list=0x{r.ahe_list:X}"
+              f" he_entry_size={r.he_entry_size} scanned={r.scanned_slots}{diag}")
+        for e in r.entries:
+            if args.type is None or e.type == args.type:
+                print(f"  [{e.index:6d}] {e.type_name:<12} obj=0x{e.kernel_object:016X}"
+                      f" user=0x{e.user_pointer:016X} flags={e.flags:#x}")
+        return 0
+    except (ValueError, ConnectionError, OSError) as exc:
+        print(f"!! win32k handles: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+
 def _setup_cli(subparsers, _client=None) -> None:
     p_root = subparsers.add_parser(
         "win32k",
-        help="win32k module (GUI thread + hook enumeration; stub for S7.3)",
+        help="win32k module (GUI threads / hooks / USER handle table)",
     )
     p_root.set_defaults(_handler=_cmd_root)
 
@@ -62,6 +86,14 @@ def _setup_cli(subparsers, _client=None) -> None:
 
     p2 = p_subs.add_parser("enumerate-hooks", help="enumerate win32k hooks")
     p2.set_defaults(_handler=_cmd_hooks)
+
+    p3 = p_subs.add_parser(
+        "handles",
+        help="walk the USER handle table (windows/hooks/menus, R3-10a)",
+    )
+    p3.add_argument("--type", type=int, default=None,
+                    help="filter by raw TYPE_* id (e.g. 1=Window, 5=Hook)")
+    p3.set_defaults(_handler=_cmd_handles)
 
 
 def _cmd_root(_args: argparse.Namespace) -> int:

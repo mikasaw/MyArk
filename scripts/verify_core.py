@@ -3248,6 +3248,111 @@ def verify_kernel_object(handle) -> None:
           "count=%d open=0x%08X walk=0x%08X" % (count6, open6, w6))
 
 
+# ---------------------------------------------------------------------------
+# [WIN32K] R3-10a: USER handle table walk (user32!gSharedInfo.aheList via
+# 0x772), with an accelerator-table probe round-trip as ground truth: user
+# objects we create in this process MUST appear as rows and disappear again.
+# ---------------------------------------------------------------------------
+
+IOCTL_MYARK_WIN32K_ENUM_USER_HANDLES = _ctl_code(FILE_DEVICE_UNKNOWN, 0x772, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+_WIN32K_HANDLE_CAP = 2048
+_WIN32K_ENTRY_SIZE = 32          # C natural alignment: 4×UINT32 + 2×UINT64
+_WIN32K_OUT_SIZE = 40 + _WIN32K_ENTRY_SIZE * _WIN32K_HANDLE_CAP
+
+_WIN32K_TYPE_WINDOW = 1
+_WIN32K_TYPE_HOOK = 5
+_WIN32K_TYPE_ACCELTABLE = 8
+
+
+def _win32k_enum_handles(handle):
+    payload = _ioctl(handle, IOCTL_MYARK_WIN32K_ENUM_USER_HANDLES, b"",
+                     _WIN32K_OUT_SIZE)
+    count, diag, shared, ahe, he_size, scanned, truncated = \
+        struct.unpack_from("<IIQQIII", payload, 0)
+    rows = []
+    for i in range(count):
+        base = 40 + i * _WIN32K_ENTRY_SIZE
+        index, rtype, flags = struct.unpack_from("<III", payload, base)
+        kobj, uptr = struct.unpack_from("<QQ", payload, base + 16)
+        rows.append((index, rtype, flags, kobj, uptr))
+    return count, diag, shared, ahe, he_size, scanned, truncated, rows
+
+
+def verify_win32k_handles(handle) -> None:
+    _step("WIN32K USER handle table + accel probe (R3-10a)")
+    user32 = ctypes.WinDLL("user32")
+
+    try:
+        count, diag, shared, ahe, he_size, scanned, truncated, rows = \
+            _win32k_enum_handles(handle)
+    except OSError as exc:
+        check("WIN32K", "0x772 baseline enum", False, str(exc))
+        return
+
+    # The user-mapped aheList region ends at a page boundary; the walk
+    # stops on the first unreadable record. That fault is recorded as
+    # 0xC0000005 in DiagStatus with partial rows -- an expected stop.
+    clean_stop = diag in (0, 0xC0000005)
+    check("WIN32K", "0x772 baseline: gSharedInfo resolved + table walked",
+          clean_stop and shared != 0 and ahe != 0 and he_size in (16, 24, 32)
+          and count >= 10,
+          "count=%d diag=0x%08X shared=0x%X ahe=0x%X he=%d scanned=%d"
+          % (count, diag, shared, ahe, he_size, scanned))
+
+    live = {r[0]: r for r in rows}
+    zero_payload = sum(1 for r in rows if r[3] == 0 and r[4] == 0)
+    # Masked-pointer rows: the user copy may zero BOTH pointer fields for a
+    # few object kinds; observed 2/239 on 1903 and 6/1129 on 22631 (<1%).
+    check("WIN32K", "0x772 rows carry payload (obj or user pointer)",
+          len(rows) > 0 and zero_payload <= max(10, len(rows) // 100),
+          "rows=%d zero_payload=%d" % (len(rows), zero_payload))
+
+    # --- probe round-trip: 3 accelerator tables appear as NEW slots, then
+    # vanish. Slot-index delta is layout-independent ground truth (the
+    # classic TYPE_* decode of the user-mapped copy is R3-10b work).
+    ACCEL = ctypes.c_ubyte * 8
+    probe_handles = []
+    for _ in range(3):
+        h = user32.CreateAcceleratorTableW((ACCEL * 1)(), 1)
+        if h:
+            probe_handles.append(h)
+    ok_created = len(probe_handles) == 3
+    check("WIN32K", "probe setup: 3 accelerator tables created", ok_created,
+          "created=%d" % len(probe_handles))
+
+    probe_ok = False
+    detail = "setup failed"
+    new_indexes = set()
+    if ok_created:
+        probe_idx = sorted(h & 0xFFFF for h in probe_handles)
+        count2, diag2, _s2, _a2, _h2, _sc2, _tr2, rows2 = \
+            _win32k_enum_handles(handle)
+        live2 = {r[0] for r in rows2}
+        new_indexes = live2 - set(live)
+        # The created handle's low 16 bits MUST be the table slot index
+        # (calibrated on 1903/22631 -- see CRASH_DEBUG_LOG R3-10a).
+        exact = sorted(new_indexes) == probe_idx
+        probe_ok = diag2 == 0 and len(new_indexes) >= 3 and exact
+        detail = ("baseline=%d after=%d new=%s probe_idx=%s"
+                  " exact=%s scanned=%d diag2=0x%08X"
+                  % (len(live), len(live2), sorted(new_indexes)[:5],
+                     probe_idx, exact, _sc2, diag2))
+    check("WIN32K", "0x772 probe: created accelerators visible as new slots",
+          probe_ok, detail)
+
+    if ok_created:
+        for h in probe_handles:
+            user32.DestroyAcceleratorTable(h)
+        count3, diag3, _s3, _a3, _h3, _sc3, _tr3, rows3 = \
+            _win32k_enum_handles(handle)
+        live3 = {r[0] for r in rows3}
+        still_there = new_indexes & live3
+        check("WIN32K", "0x772 probe: destroyed accelerators gone again",
+              diag3 == 0 and len(still_there) == 0,
+              "still_live=%s diag3=0x%08X" % (sorted(still_there)[:5], diag3))
+
+
 def verify_physical(handle) -> None:
     _step("PHYSICAL range filter + write gate (S6)")
     try:
@@ -3622,6 +3727,7 @@ MATRIX_READ_ONLY = [
     ("hello", "GREET", 0x901),
     ("kernel_object", "ENUM_DIRECTORY", 0x910),
     ("kernel_object", "IPC_SUMMARY", 0x911),
+    ("win32k", "ENUM_USER_HANDLES", 0x772),
     ("handle", "ENUM_PROCESS_HANDLES", 0xC00),
     ("handle", "QUERY_HANDLE", 0xC01),
     ("section", "QUERY_PROCESS", 0xC10),
@@ -4973,6 +5079,7 @@ def main() -> int:
         verify_timerdpc(handle)
         verify_cidtable(handle, session_key)
         verify_kernel_object(handle)
+        verify_win32k_handles(handle)
         verify_registry(handle, session_key)
         verify_hook_scan(handle)
         verify_hook_patch(handle, session_key)
@@ -5028,8 +5135,9 @@ def main() -> int:
         ("TIMERDPC",  "(8h) timer/DPC enumeration (R3-3)"),
         ("CIDTBL",    "(8i) PspCidTable + hidden detection (R3-4)"),
         ("KOBJ",      "(8j) object-directory walk + IPC summary (R3-4b)"),
+        ("WIN32K",    "(8k) USER handle table + accel probe (R3-10a)"),
         ("FILE",       "(5b) file R0 delete chain + query info"),
-        ("MATRIX",     "(7) full IOCTL matrix (54 read-only + 8 mutating)"),
+        ("MATRIX",     "(7) full IOCTL matrix (48 read-only + 8 mutating)"),
         ("DYNDATA",    "(smoke) dyndata read-only"),
         ("CALLBACK",   "(smoke) callback read-only"),
     ]
