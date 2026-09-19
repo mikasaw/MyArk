@@ -1,0 +1,12 @@
+[project]
+name = "myark-registry"
+version = "0.1.0"
+description = "MyArk registry module -- pure-R3 winreg operations (S5.1, quadrant ①)"
+requires-python = ">=3.14"
+
+[project.entry-points.myark_modules]
+registry = "myark.modules.registry:register"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

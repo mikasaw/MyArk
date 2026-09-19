@@ -1,0 +1,36 @@
+[Version]
+Signature = "$Windows NT$"
+Class = ActivityMonitor
+ClassGuid = {b86dff51-a31e-4bac-b3cf-e8b1c57ec3dc}
+Provider = %ProviderString%
+DriverVer = 08/24/2026,1.0.0.0
+CatalogFile = MyArkCore.cat
+
+[DefaultInstall]
+OptionDesc = %ServiceDescription%
+ServiceType = 1
+StartType = 3
+ErrorControl = 1
+ServiceBinary = %12%\%DriverName%.sys
+
+[DefaultInstall.Services]
+AddService = %ServiceName%,,MyArkCore_Service_Inst
+
+[DefaultInstall.HW]
+AddReg = MyArkCore_AddReg
+
+[MyArkCore_Service_Inst]
+DisplayName = %ServiceDisplayName%
+ServiceBinary = %12%\%DriverName%.sys
+Dependencies = "FltMgr"
+
+[MyArkCore_AddReg]
+HKR,,,,"MyArk ARK Core Driver"
+HKR,"SymbolicName",0x00010000,"\Device\MyArkCore"
+
+[Strings]
+ProviderString = "MyArk Project"
+ServiceDescription = "MyArk ARK Core Driver"
+ServiceDisplayName = "MyArk ARK Core"
+DriverName = "MyArkCore"
+ServiceName = "MyArkCore"

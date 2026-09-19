@@ -1,0 +1,87 @@
+[project]
+name = "myark"
+version = "0.1.0"
+description = "MyArk R3 client (Tkinter UI + CLI) for the MyArkCore KMDF driver"
+requires-python = ">=3.14"
+dependencies = [
+    "pypinyin>=0.51",
+]
+
+[project.scripts]
+myark-cli = "myark.cli.main:main"
+myark-ui = "myark.ui.main_window:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+myark = ["py.typed"]
+
+# Runtime modules register themselves here in Stage S4+. The myark_modules
+# group is plugin-loader-facing (entry_points discover myark.modules.*:register).
+#
+# Setuptools >= 64 implements PEP 621 [project.entry-points], so the modern
+# form below replaces the legacy [options.entry_points] (rejected by uv's
+# strict TOML parser). The in-tree modules under ``myark.modules.<name>`` are
+# also enumerated by :mod:`myark._builtin_modules` via ``pkgutil.iter_modules``
+# -- this fallback handles the editable-install case where custom
+# entry-point groups on the distribution itself are dropped from dist-info.
+# Both paths run; entry-points win on name collision so a third-party plugin
+# can shadow an in-tree module if needed.
+[project.entry-points.myark_modules]
+hello = "myark.modules.hello:register"
+process = "myark.modules.process:register"
+registry = "myark.modules.registry:register"
+network = "myark.modules.network:register"
+file = "myark.modules.file:register"
+handle = "myark.modules.handle:register"
+section = "myark.modules.section:register"
+kmod = "myark.modules.kmod:register"
+kernel = "myark.modules.kernel:register"
+storage = "myark.modules.storage:register"
+device-audit = "myark.modules.device_audit:register"
+keyboard = "myark.modules.keyboard:register"
+debug-output = "myark.modules.debug_output:register"
+dyndata = "myark.modules.dyndata:register"
+callback = "myark.modules.callback:register"
+capability = "myark.modules.capability:register"
+preflight = "myark.modules.preflight:register"
+safety = "myark.modules.safety:register"
+security_audit = "myark.modules.security_audit:register"
+trust = "myark.modules.trust:register"
+kernel_ext = "myark.modules.kernel_ext:register"
+hwid = "myark.modules.hwid:register"
+alpc = "myark.modules.alpc:register"
+wsl = "myark.modules.wsl:register"
+win32k = "myark.modules.win32k:register"
+authentication = "myark.modules.authentication:register"
+bugcheck = "myark.modules.bugcheck:register"
+wfp = "myark.modules.wfp:register"
+mutation = "myark.modules.mutation:register"
+redirect = "myark.modules.redirect:register"
+actions = "myark.modules.actions:register"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+# ---------------------------------------------------------------------------
+# Standalone exe build (PyInstaller)
+# ---------------------------------------------------------------------------
+# 项目内的 .venv/Scripts/myark-cli.exe 是 wrapper (需 .venv 环境)。
+# 真正的独立 exe (含 Python runtime, 可复制到其他机器) 需要 PyInstaller 打包:
+#
+#   scripts\build_exe.bat              Build both myark-cli + myark-ui
+#   scripts\build_exe.bat clean        Clean dist/ + build/ + *.spec
+#
+# 产物:
+#   client\dist\myark-cli\myark-cli.exe
+#   client\dist\myark-ui\myark-ui.exe
+#
+# 入口 client\pyinstaller\*_launch.py 用绝对 import;详见 BUILD_EXE.md。
+

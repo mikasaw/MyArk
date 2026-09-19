@@ -1,0 +1,300 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{B86DFF51-A31E-4BAC-B3CF-E8B1C57EC3E0}</ProjectGuid>
+    <Keyword>MakeFileProj</Keyword>
+    <RootNamespace>MyArkCore</RootNamespace>
+    <ConfigurationType>Driver</ConfigurationType>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <DriverType>KMDF</DriverType>
+    <TargetVersion>Windows10</TargetVersion>
+    <TargetPlatformVersion>10.0.28000.0</TargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.28000.0</WindowsTargetPlatformVersion>
+    <MYARK_CONFIG_HEADER Condition="'$(MYARK_CONFIG_HEADER)'==''">myark_full.h</MYARK_CONFIG_HEADER>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <OutDir>$(SolutionDir)x64\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <OutDir>$(SolutionDir)x64\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
+    <EnableDeployment>false</EnableDeployment>
+    <DeploymentContent />
+    <SignMode>Test</SignMode>
+    <TreatWarningAsError>true</TreatWarningAsError>
+    <EnableInf2Cat>false</EnableInf2Cat>
+    <SkipPackageVerification>true</SkipPackageVerification>
+    <!-- Bind KMDF 1.27 (Win10 1809+ inbox framework; later OSes bind it
+         downward-compatibly). The WDK default (1.35) only binds on Win11
+         and fails NtLoadDriver with STATUS_INVALID_PARAMETER on Win10. -->
+    <KmdfVersion>1.27</KmdfVersion>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <WarningLevel>Level4</WarningLevel>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory);$(KMDFVersion)\..\..\inc;$(MSBuildThisFileDirectory)..\shared\driver;$(MSBuildThisFileDirectory)..\config;$(MSBuildThisFileDirectory)src\module;$(MSBuildThisFileDirectory)src\dispatch;$(MSBuildThisFileDirectory)src\modules\00_hello;$(MSBuildThisFileDirectory)src\modules\11_thread;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>MYARK_CONFIG_HEADER=$(MYARK_CONFIG_HEADER);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <!-- cng.lib: kernel-mode CNG (HMAC-SHA256 for the safety-token
+           validator; binds the import to cng.sys. The WDK km dir has no
+           bcrypt.lib, so linking the um one imports bcrypt.dll and the
+           driver fails to load with STATUS_OBJECT_NAME_NOT_FOUND).
+           ntoskrnl.lib: SystemPrng for the session key.
+           fltmgr.lib: minifilter registration (filemon module, R2-7). -->
+      <AdditionalDependencies>cng.lib;ntoskrnl.lib;fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/GUARD:NO /INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+    <Inf>
+      <PrimaryInf>MyArkCore.inf</PrimaryInf>
+    </Inf>
+    <DriverSign>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/fd SHA256 %(AdditionalOptions)</AdditionalOptions>
+    </DriverSign>
+    <DriverSign>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">/fd SHA256 %(AdditionalOptions)</AdditionalOptions>
+    </DriverSign>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\framework\driver_entry.c" />
+    <ClCompile Include="src\framework\device_control.c" />
+    <ClCompile Include="src\framework\io_queue.c" />
+    <ClCompile Include="src\module\module_registry.c" />
+    <ClCompile Include="src\module\module_mask.c" />
+    <ClCompile Include="src\dispatch\ioctl_registry.c" />
+    <ClCompile Include="src\dispatch\ioctl_validation.c" />
+    <ClCompile Include="src\dispatch\ioctl_dispatch.c" />
+    <ClCompile Include="src\dispatch\core_ioctl_handlers.c" />
+    <ClCompile Include="src\dispatch\safety_token.c" />
+    <ClCompile Include="src\modules\00_hello\hello_descriptor.c" />
+    <ClCompile Include="src\modules\65_cpu\cpu_capture.c" />
+    <ClCompile Include="src\modules\65_cpu\cpu_ioctl.c" />
+    <ClCompile Include="src\modules\65_cpu\cpu_descriptor.c" />
+    <ClCompile Include="src\modules\26_timerdpc\timerdpc_offsets.c" />
+    <ClCompile Include="src\modules\26_timerdpc\timerdpc_walk.c" />
+    <ClCompile Include="src\modules\26_timerdpc\timerdpc_ioctl.c" />
+    <ClCompile Include="src\modules\26_timerdpc\timerdpc_descriptor.c" />
+    <ClCompile Include="src\modules\00_hello\hello_ioctl_handlers.c" />
+    <ClCompile Include="src\modules\10_process\process_descriptor.c" />
+    <ClCompile Include="src\modules\10_process\process_offsets.c" />
+    <ClCompile Include="src\modules\10_process\process_cidtable.c" />
+    <ClCompile Include="src\modules\10_process\process_ioctl.c" />
+    <ClCompile Include="src\modules\10_process\process_query.c" />
+    <ClCompile Include="src\modules\10_process\process_detail.c" />
+    <ClCompile Include="src\modules\10_process\process_crossview.c" />
+    <ClCompile Include="src\modules\10_process\process_actions.c" />
+    <ClCompile Include="src\modules\11_thread\thread_descriptor.c" />
+    <ClCompile Include="src\modules\11_thread\thread_query.c" />
+    <ClCompile Include="src\modules\11_thread\thread_detail.c" />
+    <ClCompile Include="src\modules\11_thread\thread_crossview.c" />
+    <ClCompile Include="src\modules\11_thread\thread_actions.c" />
+    <ClCompile Include="src\modules\11_thread\thread_ioctl.c" />
+    <ClCompile Include="src\modules\12_memory\memory_module.c" />
+    <ClCompile Include="src\modules\12_memory\memory_virtual.c" />
+    <ClCompile Include="src\modules\12_memory\memory_physical.c" />
+    <ClCompile Include="src\modules\12_memory\memory_pagetable.c" />
+    <ClCompile Include="src\modules\12_memory\memory_scan.c" />
+    <ClCompile Include="src\modules\20_handle\handle_descriptor.c" />
+    <ClCompile Include="src\modules\20_handle\handle_walk.c" />
+    <ClCompile Include="src\modules\20_handle\handle_ioctl.c" />
+    <ClCompile Include="src\modules\21_section\section_descriptor.c" />
+    <ClCompile Include="src\modules\21_section\section_ioctl.c" />
+    <ClCompile Include="src\modules\22_kmod\kmod_descriptor.c" />
+    <ClCompile Include="src\modules\22_kmod\kmod_ioctl.c" />
+    <ClCompile Include="src\modules\25_kernel\kernel_descriptor.c" />
+    <ClCompile Include="src\modules\25_kernel\kernel_ioctl.c" />
+    <ClCompile Include="src\modules\25_kernel\inline_hook_scan.c" />
+    <ClCompile Include="src\modules\25_kernel\patch_inline_hook.c" />
+    <ClCompile Include="src\modules\25_kernel\eat_iat_enum.c" />
+    <ClCompile Include="src\modules\25_kernel\integrity_snapshot.c" />
+    <ClCompile Include="src\modules\25_kernel\force_unload.c" />
+    <ClCompile Include="src\modules\23_storage\storage_descriptor.c" />
+    <ClCompile Include="src\modules\23_storage\storage_ioctl.c" />
+    <ClCompile Include="src\modules\24_device_audit\devaudit_descriptor.c" />
+    <ClCompile Include="src\modules\24_device_audit\devaudit_ioctl.c" />
+    <ClCompile Include="src\modules\30_keyboard\keyboard_descriptor.c" />
+    <ClCompile Include="src\modules\30_keyboard\keyboard_ioctl.c" />
+    <ClCompile Include="src\modules\31_debug_output\dbgout_descriptor.c" />
+    <ClCompile Include="src\modules\31_debug_output\dbgout_ioctl.c" />
+    <ClCompile Include="src\modules\70_dyndata\dyndata_descriptor.c" />
+    <ClCompile Include="src\modules\70_dyndata\dyndata_pagetable.c" />
+    <ClCompile Include="src\modules\70_dyndata\dyndata_ioctl.c" />
+    <ClCompile Include="src\modules\71_callback\callback_descriptor.c" />
+    <ClCompile Include="src\modules\71_callback\callback_ask.c" />
+    <ClCompile Include="src\modules\71_callback\callback_obprotect.c" />
+    <ClCompile Include="src\modules\71_callback\callback_walker.c" />
+    <ClCompile Include="src\modules\71_callback\callback_rules.c" />
+    <ClCompile Include="src\modules\71_callback\callback_ioctl.c" />
+    <ClCompile Include="src\modules\84_capability\capability_descriptor.c" />
+    <ClCompile Include="src\modules\84_capability\capability_walker.c" />
+    <ClCompile Include="src\modules\84_capability\capability_ioctl.c" />
+    <ClCompile Include="src\modules\82_preflight\preflight_descriptor.c" />
+    <ClCompile Include="src\modules\82_preflight\preflight_walker.c" />
+    <ClCompile Include="src\modules\82_preflight\preflight_ioctl.c" />
+    <ClCompile Include="src\modules\86_safety\safety_descriptor.c" />
+    <ClCompile Include="src\modules\86_safety\safety_walker.c" />
+    <ClCompile Include="src\modules\86_safety\safety_ioctl.c" />
+    <ClCompile Include="src\modules\83_security_audit\secaudit_descriptor.c" />
+    <ClCompile Include="src\modules\83_security_audit\secaudit_walker.c" />
+    <ClCompile Include="src\modules\83_security_audit\secaudit_ioctl.c" />
+    <ClCompile Include="src\modules\83_security_audit\secaudit_posture.c" />
+    <ClCompile Include="src\modules\81_trust\trust_descriptor.c" />
+    <ClCompile Include="src\modules\81_trust\trust_walker.c" />
+    <ClCompile Include="src\modules\81_trust\trust_ioctl.c" />
+    <ClCompile Include="src\modules\85_kernel_ext\kernel_ext_descriptor.c" />
+    <ClCompile Include="src\modules\85_kernel_ext\kernel_ext_walker.c" />
+    <ClCompile Include="src\modules\85_kernel_ext\kernel_ext_ioctl.c" />
+    <ClCompile Include="src\modules\75_hwid\hwid_descriptor.c" />
+    <ClCompile Include="src\modules\75_hwid\hwid_walker.c" />
+    <ClCompile Include="src\modules\75_hwid\hwid_ioctl.c" />
+    <ClCompile Include="src\modules\75_hwid\hwid_spoof_state.c" />
+    <ClCompile Include="src\modules\75_hwid\hwid_spoof_disk.c" />
+    <ClCompile Include="src\modules\75_hwid\hwid_spoof_gpu.c" />
+    <ClCompile Include="src\modules\75_hwid\hwid_spoof_ioctl.c" />
+    <ClCompile Include="src\modules\75_hwid\hwid_spoof_arp.c" />
+    <ClCompile Include="src\modules\79_alpc\alpc_descriptor.c" />
+    <ClCompile Include="src\modules\79_alpc\alpc_walker.c" />
+    <ClCompile Include="src\modules\79_alpc\alpc_ioctl.c" />
+    <ClCompile Include="src\modules\78_wsl\wsl_descriptor.c" />
+    <ClCompile Include="src\modules\78_wsl\wsl_walker.c" />
+    <ClCompile Include="src\modules\78_wsl\wsl_ioctl.c" />
+    <ClCompile Include="src\modules\77_win32k\win32k_descriptor.c" />
+    <ClCompile Include="src\modules\77_win32k\win32k_walker.c" />
+    <ClCompile Include="src\modules\77_win32k\win32k_ioctl.c" />
+    <ClCompile Include="src\modules\80_authentication\authentication_descriptor.c" />
+    <ClCompile Include="src\modules\80_authentication\authentication_walker.c" />
+    <ClCompile Include="src\modules\80_authentication\authentication_ioctl.c" />
+    <ClCompile Include="src\modules\76_bugcheck\bugcheck_descriptor.c" />
+    <ClCompile Include="src\modules\76_bugcheck\bugcheck_walker.c" />
+    <ClCompile Include="src\modules\76_bugcheck\bugcheck_ioctl.c" />
+    <ClCompile Include="src\modules\72_wfp\wfp_descriptor.c" />
+    <ClCompile Include="src\modules\72_wfp\wfp_walker.c" />
+    <ClCompile Include="src\modules\72_wfp\wfp_ioctl.c" />
+    <ClCompile Include="src\modules\72_wfp\wfp_inventory.c" />
+    <ClCompile Include="src\modules\73_mutation\mutation_descriptor.c" />
+    <ClCompile Include="src\modules\73_mutation\mutation_walker.c" />
+    <ClCompile Include="src\modules\73_mutation\mutation_ioctl.c" />
+    <ClCompile Include="src\modules\73_mutation\mutation_tx.c" />
+    <ClCompile Include="src\modules\74_redirect\redirect_descriptor.c" />
+    <ClCompile Include="src\modules\74_redirect\redirect_walker.c" />
+    <ClCompile Include="src\modules\74_redirect\redirect_ioctl.c" />
+    <ClCompile Include="src\modules\74_redirect\redirect_engine.c" />
+    <ClCompile Include="src\modules\87_actions\actions_descriptor.c" />
+    <ClCompile Include="src\modules\87_actions\actions_inject_shellcode.c" />
+    <ClCompile Include="src\modules\87_actions\actions_internal.c" />
+    <ClCompile Include="src\modules\87_actions\actions_ioctl.c" />
+    <ClCompile Include="src\modules\88_registry\registry_ioctl.c" />
+    <ClCompile Include="src\modules\88_registry\registry_descriptor.c" />
+    <ClCompile Include="src\modules\89_file\file_ioctl.c" />
+    <ClCompile Include="src\modules\89_file\file_set_integrity.c" />
+    <ClCompile Include="src\modules\89_file\file_descriptor.c" />
+    <ClCompile Include="src\modules\90_filemon\filemon_monitor.c" />
+    <ClCompile Include="src\modules\90_filemon\filemon_ioctl.c" />
+    <ClCompile Include="src\modules\90_filemon\filemon_descriptor.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Trace.h" />
+    <ClInclude Include="src\module\module_descriptor.h" />
+    <ClInclude Include="src\module\module_registry.h" />
+    <ClInclude Include="src\module\module_mask.h" />
+    <ClInclude Include="src\dispatch\ioctl_registry.h" />
+    <ClInclude Include="src\dispatch\ioctl_validation.h" />
+    <ClInclude Include="src\dispatch\ioctl_helpers.h" />
+    <ClInclude Include="src\dispatch\ioctl_dispatch.h" />
+    <ClInclude Include="src\dispatch\core_ioctl_handlers.h" />
+    <ClInclude Include="src\dispatch\safety_token.h" />
+    <ClInclude Include="src\modules\00_hello\hello_descriptor.h" />
+    <ClInclude Include="src\modules\65_cpu\cpu_internal.h" />
+    <ClInclude Include="src\modules\65_cpu\cpu_descriptor.h" />
+    <ClInclude Include="src\modules\26_timerdpc\timerdpc_internal.h" />
+    <ClInclude Include="src\modules\26_timerdpc\timerdpc_descriptor.h" />
+    <ClInclude Include="src\modules\10_process\process_descriptor.h" />
+    <ClInclude Include="src\modules\10_process\process_internal.h" />
+    <ClInclude Include="src\modules\11_thread\thread_descriptor.h" />
+    <ClInclude Include="src\modules\11_thread\thread_internal.h" />
+    <ClInclude Include="src\modules\12_memory\memory_module.h" />
+    <ClInclude Include="src\modules\20_handle\handle_descriptor.h" />
+    <ClInclude Include="src\modules\20_handle\handle_internal.h" />
+    <ClInclude Include="src\modules\21_section\section_descriptor.h" />
+    <ClInclude Include="src\modules\21_section\section_internal.h" />
+    <ClInclude Include="src\modules\22_kmod\kmod_descriptor.h" />
+    <ClInclude Include="src\modules\22_kmod\kmod_internal.h" />
+    <ClInclude Include="src\modules\25_kernel\kernel_descriptor.h" />
+    <ClInclude Include="src\modules\25_kernel\kernel_internal.h" />
+    <ClInclude Include="src\modules\23_storage\storage_descriptor.h" />
+    <ClInclude Include="src\modules\23_storage\storage_internal.h" />
+    <ClInclude Include="src\modules\24_device_audit\devaudit_descriptor.h" />
+    <ClInclude Include="src\modules\24_device_audit\devaudit_internal.h" />
+    <ClInclude Include="src\modules\30_keyboard\keyboard_descriptor.h" />
+    <ClInclude Include="src\modules\30_keyboard\keyboard_internal.h" />
+    <ClInclude Include="src\modules\31_debug_output\dbgout_descriptor.h" />
+    <ClInclude Include="src\modules\31_debug_output\dbgout_internal.h" />
+    <ClInclude Include="src\modules\70_dyndata\dyndata_descriptor.h" />
+    <ClInclude Include="src\modules\70_dyndata\dyndata_internal.h" />
+    <ClInclude Include="src\modules\71_callback\callback_descriptor.h" />
+    <ClInclude Include="src\modules\71_callback\callback_internal.h" />
+    <ClInclude Include="src\modules\84_capability\capability_descriptor.h" />
+    <ClInclude Include="src\modules\84_capability\capability_internal.h" />
+    <ClInclude Include="src\modules\82_preflight\preflight_descriptor.h" />
+    <ClInclude Include="src\modules\82_preflight\preflight_internal.h" />
+    <ClInclude Include="src\modules\86_safety\safety_descriptor.h" />
+    <ClInclude Include="src\modules\86_safety\safety_internal.h" />
+    <ClInclude Include="src\modules\83_security_audit\secaudit_descriptor.h" />
+    <ClInclude Include="src\modules\83_security_audit\secaudit_internal.h" />
+    <ClInclude Include="src\modules\81_trust\trust_descriptor.h" />
+    <ClInclude Include="src\modules\81_trust\trust_internal.h" />
+    <ClInclude Include="src\modules\85_kernel_ext\kernel_ext_descriptor.h" />
+    <ClInclude Include="src\modules\85_kernel_ext\kernel_ext_internal.h" />
+    <ClInclude Include="src\modules\75_hwid\hwid_descriptor.h" />
+    <ClInclude Include="src\modules\75_hwid\hwid_internal.h" />
+    <ClInclude Include="src\modules\75_hwid\hwid_spoof_internal.h" />
+    <ClInclude Include="src\modules\79_alpc\alpc_descriptor.h" />
+    <ClInclude Include="src\modules\79_alpc\alpc_internal.h" />
+    <ClInclude Include="src\modules\78_wsl\wsl_descriptor.h" />
+    <ClInclude Include="src\modules\78_wsl\wsl_internal.h" />
+    <ClInclude Include="src\modules\77_win32k\win32k_descriptor.h" />
+    <ClInclude Include="src\modules\77_win32k\win32k_internal.h" />
+    <ClInclude Include="src\modules\80_authentication\authentication_descriptor.h" />
+    <ClInclude Include="src\modules\80_authentication\authentication_internal.h" />
+    <ClInclude Include="src\modules\76_bugcheck\bugcheck_descriptor.h" />
+    <ClInclude Include="src\modules\76_bugcheck\bugcheck_internal.h" />
+    <ClInclude Include="src\modules\72_wfp\wfp_descriptor.h" />
+    <ClInclude Include="src\modules\72_wfp\wfp_internal.h" />
+    <ClInclude Include="src\modules\73_mutation\mutation_descriptor.h" />
+    <ClInclude Include="src\modules\73_mutation\mutation_internal.h" />
+    <ClInclude Include="src\modules\74_redirect\redirect_descriptor.h" />
+    <ClInclude Include="src\modules\74_redirect\redirect_internal.h" />
+    <ClInclude Include="src\modules\87_actions\actions_descriptor.h" />
+    <ClInclude Include="src\modules\87_actions\actions_internal.h" />
+    <ClInclude Include="src\modules\88_registry\registry_internal.h" />
+    <ClInclude Include="src\modules\88_registry\registry_descriptor.h" />
+    <ClInclude Include="src\modules\89_file\file_internal.h" />
+    <ClInclude Include="src\modules\89_file\file_descriptor.h" />
+    <ClInclude Include="src\modules\90_filemon\filemon_internal.h" />
+    <ClInclude Include="src\modules\90_filemon\filemon_descriptor.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Include="MyArkCore.inf" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

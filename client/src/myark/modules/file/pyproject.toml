@@ -1,0 +1,12 @@
+[project]
+name = "myark-file"
+version = "0.1.0"
+description = "MyArk file module -- pure-R3 file-attribute browser (file info + SDDL, S5.3, quadrant ①)"
+requires-python = ">=3.14"
+
+[project.entry-points.myark_modules]
+file = "myark.modules.file:register"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

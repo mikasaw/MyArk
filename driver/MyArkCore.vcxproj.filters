@@ -1,0 +1,629 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx</Extensions>
+    </Filter>
+    <Filter Include="Source Files\framework">
+      <UniqueIdentifier>{8B7C8D9E-1A2B-3C4D-5E6F-7A8B9C0D1E2F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\module">
+      <UniqueIdentifier>{9C8D9E0F-2B3C-4D5E-6F7A-8B9C0D1E2F3A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\dispatch">
+      <UniqueIdentifier>{AD9EAF1F-3C4D-5E6F-8A9B-9C0D1E2F3A4B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules">
+      <UniqueIdentifier>{BEAF2F2F-4D5E-6F7A-8B9C-0D1E2F3A4B5C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\00_hello">
+      <UniqueIdentifier>{CF3F3F3F-5E6F-7A8B-9C0D-1E2F3A4B5C6D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\10_process">
+      <UniqueIdentifier>{D0404040-6F70-7A8B-9C0D-1E2F3A4B5C6E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\12_memory">
+      <UniqueIdentifier>{E1505050-7080-8A9B-9C0D-1E2F3A4B5C6F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\20_handle">
+      <UniqueIdentifier>{F1606060-8090-9AAB-0C1D-2E3F4B5C6D70}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\21_section">
+      <UniqueIdentifier>{02717171-91A1-0BBC-1D2E-3F4B5C6D7E81}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\22_kmod">
+      <UniqueIdentifier>{13828282-A2B2-1CCD-2E3F-4B5C6D7E8F92}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\25_kernel">
+      <UniqueIdentifier>{1B929292-B3C3-2DEE-4051-5D6E7F8A9BAA}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\23_storage">
+      <UniqueIdentifier>{24939393-B3C3-2DDE-3F4B-5C6D7E8F9AA3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\24_device_audit">
+      <UniqueIdentifier>{35A4A4A4-C4D4-3EEF-4B5C-6D7E8F9AABB4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\30_keyboard">
+      <UniqueIdentifier>{46B5B5B5-D5E5-4FF0-5C6D-7E8F9AABBCC5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\31_debug_output">
+      <UniqueIdentifier>{57C6C6C6-E6F6-5011-6D7E-8F9AABBCDDE6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\70_dyndata">
+      <UniqueIdentifier>{68D7D7D7-F707-6122-7E8F-9AABBCDDEEF7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\71_callback">
+      <UniqueIdentifier>{79E8E8E8-0818-7233-8F90-AABBCCDDEEF8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\84_capability">
+      <UniqueIdentifier>{8AF9F9F9-1929-8244-90A1-BBCCDDEEF919}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\82_preflight">
+      <UniqueIdentifier>{9B0A0A0A-2A3A-9355-A1B2-CCDDEEF91A2A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\86_safety">
+      <UniqueIdentifier>{AC1B1B1B-3B4B-A466-B2C3-DDEEF91B2B3B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\83_security_audit">
+      <UniqueIdentifier>{BD2C2C2C-4C5C-B577-C3D4-EEF91B2B3C4C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\81_trust">
+      <UniqueIdentifier>{CE3D3D3D-5D6D-C688-D4E5-FF91B2B3C4D5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\85_kernel_ext">
+      <UniqueIdentifier>{DF4E4E4E-6E7F-D799-E5F6-0091B2B3C4E6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\75_hwid">
+      <UniqueIdentifier>{E05F5F5F-7080-E800-F607-1192B2B3C4F7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\79_alpc">
+      <UniqueIdentifier>{F1606060-8191-F911-F708-1293B2B3C508}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\78_wsl">
+      <UniqueIdentifier>{02717171-92A2-A022-F809-1394B2B3C619}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\77_win32k">
+      <UniqueIdentifier>{13828282-A3B3-B133-0910-1495B2B3C720}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\80_authentication">
+      <UniqueIdentifier>{24939393-B4C4-C244-1021-1596B2B3C831}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\76_bugcheck">
+      <UniqueIdentifier>{35A4A4A4-C5D5-D355-2132-1697B2B3C942}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\72_wfp">
+      <UniqueIdentifier>{46B5B5B5-D6E6-E466-3243-1798B2B3CA53}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\73_mutation">
+      <UniqueIdentifier>{57C6C6C6-E7F7-F577-4354-1899B2B3CB64}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\74_redirect">
+      <UniqueIdentifier>{68D7D7D7-F808-G688-5465-199AB2B3CC75}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\87_actions">
+      <UniqueIdentifier>{79E8E8E8-F919-G799-6576-1A9CB2B3CD86}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4B04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Driver Files">
+      <UniqueIdentifier>{D7E3A1B2-4C5D-6E7F-8A9B-0C1D2E3F4A5B}</UniqueIdentifier>
+      <Extensions>inf</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\framework\driver_entry.c">
+      <Filter>Source Files\framework</Filter>
+    </ClCompile>
+    <ClCompile Include="src\framework\device_control.c">
+      <Filter>Source Files\framework</Filter>
+    </ClCompile>
+    <ClCompile Include="src\framework\io_queue.c">
+      <Filter>Source Files\framework</Filter>
+    </ClCompile>
+    <ClCompile Include="src\module\module_registry.c">
+      <Filter>Source Files\module</Filter>
+    </ClCompile>
+    <ClCompile Include="src\module\module_mask.c">
+      <Filter>Source Files\module</Filter>
+    </ClCompile>
+    <ClCompile Include="src\dispatch\ioctl_registry.c">
+      <Filter>Source Files\dispatch</Filter>
+    </ClCompile>
+    <ClCompile Include="src\dispatch\ioctl_validation.c">
+      <Filter>Source Files\dispatch</Filter>
+    </ClCompile>
+    <ClCompile Include="src\dispatch\ioctl_dispatch.c">
+      <Filter>Source Files\dispatch</Filter>
+    </ClCompile>
+    <ClCompile Include="src\dispatch\core_ioctl_handlers.c">
+      <Filter>Source Files\dispatch</Filter>
+    </ClCompile>
+    <ClCompile Include="src\dispatch\safety_token.c">
+      <Filter>Source Files\dispatch</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\00_hello\hello_descriptor.c">
+      <Filter>Source Files\modules\00_hello</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\00_hello\hello_ioctl_handlers.c">
+      <Filter>Source Files\modules\00_hello</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\10_process\process_descriptor.c">
+      <Filter>Source Files\modules\10_process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\10_process\process_ioctl.c">
+      <Filter>Source Files\modules\10_process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\10_process\process_query.c">
+      <Filter>Source Files\modules\10_process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\10_process\process_detail.c">
+      <Filter>Source Files\modules\10_process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\10_process\process_crossview.c">
+      <Filter>Source Files\modules\10_process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\10_process\process_actions.c">
+      <Filter>Source Files\modules\10_process</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\12_memory\memory_module.c">
+      <Filter>Source Files\modules\12_memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\12_memory\memory_virtual.c">
+      <Filter>Source Files\modules\12_memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\12_memory\memory_physical.c">
+      <Filter>Source Files\modules\12_memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\12_memory\memory_pagetable.c">
+      <Filter>Source Files\modules\12_memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\12_memory\memory_scan.c">
+      <Filter>Source Files\modules\12_memory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\20_handle\handle_descriptor.c">
+      <Filter>Source Files\modules\20_handle</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\20_handle\handle_walk.c">
+      <Filter>Source Files\modules\20_handle</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\20_handle\handle_ioctl.c">
+      <Filter>Source Files\modules\20_handle</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\21_section\section_descriptor.c">
+      <Filter>Source Files\modules\21_section</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\21_section\section_ioctl.c">
+      <Filter>Source Files\modules\21_section</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\22_kmod\kmod_descriptor.c">
+      <Filter>Source Files\modules\22_kmod</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\22_kmod\kmod_ioctl.c">
+      <Filter>Source Files\modules\22_kmod</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\25_kernel\kernel_descriptor.c">
+      <Filter>Source Files\modules\25_kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\25_kernel\kernel_ioctl.c">
+      <Filter>Source Files\modules\25_kernel</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\23_storage\storage_descriptor.c">
+      <Filter>Source Files\modules\23_storage</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\23_storage\storage_ioctl.c">
+      <Filter>Source Files\modules\23_storage</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\24_device_audit\devaudit_descriptor.c">
+      <Filter>Source Files\modules\24_device_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\24_device_audit\devaudit_ioctl.c">
+      <Filter>Source Files\modules\24_device_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\30_keyboard\keyboard_descriptor.c">
+      <Filter>Source Files\modules\30_keyboard</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\30_keyboard\keyboard_ioctl.c">
+      <Filter>Source Files\modules\30_keyboard</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\31_debug_output\dbgout_descriptor.c">
+      <Filter>Source Files\modules\31_debug_output</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\31_debug_output\dbgout_ioctl.c">
+      <Filter>Source Files\modules\31_debug_output</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\70_dyndata\dyndata_descriptor.c">
+      <Filter>Source Files\modules\70_dyndata</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\70_dyndata\dyndata_pagetable.c">
+      <Filter>Source Files\modules\70_dyndata</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\70_dyndata\dyndata_ioctl.c">
+      <Filter>Source Files\modules\70_dyndata</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\71_callback\callback_descriptor.c">
+      <Filter>Source Files\modules\71_callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\71_callback\callback_walker.c">
+      <Filter>Source Files\modules\71_callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\71_callback\callback_ioctl.c">
+      <Filter>Source Files\modules\71_callback</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\84_capability\capability_descriptor.c">
+      <Filter>Source Files\modules\84_capability</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\84_capability\capability_walker.c">
+      <Filter>Source Files\modules\84_capability</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\84_capability\capability_ioctl.c">
+      <Filter>Source Files\modules\84_capability</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\82_preflight\preflight_descriptor.c">
+      <Filter>Source Files\modules\82_preflight</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\82_preflight\preflight_walker.c">
+      <Filter>Source Files\modules\82_preflight</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\82_preflight\preflight_ioctl.c">
+      <Filter>Source Files\modules\82_preflight</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\86_safety\safety_descriptor.c">
+      <Filter>Source Files\modules\86_safety</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\86_safety\safety_walker.c">
+      <Filter>Source Files\modules\86_safety</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\86_safety\safety_ioctl.c">
+      <Filter>Source Files\modules\86_safety</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\83_security_audit\secaudit_descriptor.c">
+      <Filter>Source Files\modules\83_security_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\83_security_audit\secaudit_walker.c">
+      <Filter>Source Files\modules\83_security_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\83_security_audit\secaudit_ioctl.c">
+      <Filter>Source Files\modules\83_security_audit</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\81_trust\trust_descriptor.c">
+      <Filter>Source Files\modules\81_trust</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\81_trust\trust_walker.c">
+      <Filter>Source Files\modules\81_trust</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\81_trust\trust_ioctl.c">
+      <Filter>Source Files\modules\81_trust</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\85_kernel_ext\kernel_ext_descriptor.c">
+      <Filter>Source Files\modules\85_kernel_ext</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\85_kernel_ext\kernel_ext_walker.c">
+      <Filter>Source Files\modules\85_kernel_ext</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\85_kernel_ext\kernel_ext_ioctl.c">
+      <Filter>Source Files\modules\85_kernel_ext</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\75_hwid\hwid_descriptor.c">
+      <Filter>Source Files\modules\75_hwid</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\75_hwid\hwid_walker.c">
+      <Filter>Source Files\modules\75_hwid</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\75_hwid\hwid_ioctl.c">
+      <Filter>Source Files\modules\75_hwid</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\79_alpc\alpc_descriptor.c">
+      <Filter>Source Files\modules\79_alpc</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\79_alpc\alpc_walker.c">
+      <Filter>Source Files\modules\79_alpc</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\79_alpc\alpc_ioctl.c">
+      <Filter>Source Files\modules\79_alpc</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\78_wsl\wsl_descriptor.c">
+      <Filter>Source Files\modules\78_wsl</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\78_wsl\wsl_walker.c">
+      <Filter>Source Files\modules\78_wsl</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\78_wsl\wsl_ioctl.c">
+      <Filter>Source Files\modules\78_wsl</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\77_win32k\win32k_descriptor.c">
+      <Filter>Source Files\modules\77_win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\77_win32k\win32k_walker.c">
+      <Filter>Source Files\modules\77_win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\77_win32k\win32k_ioctl.c">
+      <Filter>Source Files\modules\77_win32k</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\80_authentication\authentication_descriptor.c">
+      <Filter>Source Files\modules\80_authentication</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\80_authentication\authentication_walker.c">
+      <Filter>Source Files\modules\80_authentication</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\80_authentication\authentication_ioctl.c">
+      <Filter>Source Files\modules\80_authentication</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\76_bugcheck\bugcheck_descriptor.c">
+      <Filter>Source Files\modules\76_bugcheck</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\76_bugcheck\bugcheck_walker.c">
+      <Filter>Source Files\modules\76_bugcheck</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\76_bugcheck\bugcheck_ioctl.c">
+      <Filter>Source Files\modules\76_bugcheck</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\72_wfp\wfp_descriptor.c">
+      <Filter>Source Files\modules\72_wfp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\72_wfp\wfp_walker.c">
+      <Filter>Source Files\modules\72_wfp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\72_wfp\wfp_ioctl.c">
+      <Filter>Source Files\modules\72_wfp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\73_mutation\mutation_descriptor.c">
+      <Filter>Source Files\modules\73_mutation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\73_mutation\mutation_walker.c">
+      <Filter>Source Files\modules\73_mutation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\73_mutation\mutation_ioctl.c">
+      <Filter>Source Files\modules\73_mutation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\74_redirect\redirect_descriptor.c">
+      <Filter>Source Files\modules\74_redirect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\74_redirect\redirect_walker.c">
+      <Filter>Source Files\modules\74_redirect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\74_redirect\redirect_ioctl.c">
+      <Filter>Source Files\modules\74_redirect</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\87_actions\actions_descriptor.c">
+      <Filter>Source Files\modules\87_actions</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\87_actions\actions_internal.c">
+      <Filter>Source Files\modules\87_actions</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\87_actions\actions_ioctl.c">
+      <Filter>Source Files\modules\87_actions</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\11_thread\thread_descriptor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\11_thread\thread_query.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\11_thread\thread_detail.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\11_thread\thread_crossview.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\11_thread\thread_actions.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\modules\11_thread\thread_ioctl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Trace.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\module\module_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\module\module_registry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\module\module_mask.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dispatch\ioctl_registry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dispatch\ioctl_validation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dispatch\ioctl_helpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dispatch\ioctl_dispatch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dispatch\core_ioctl_handlers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dispatch\safety_token.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\00_hello\hello_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\10_process\process_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\10_process\process_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\12_memory\memory_module.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\20_handle\handle_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\20_handle\handle_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\21_section\section_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\21_section\section_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\22_kmod\kmod_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\22_kmod\kmod_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\25_kernel\kernel_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\25_kernel\kernel_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\23_storage\storage_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\23_storage\storage_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\24_device_audit\devaudit_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\24_device_audit\devaudit_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\30_keyboard\keyboard_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\30_keyboard\keyboard_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\31_debug_output\dbgout_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\31_debug_output\dbgout_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\70_dyndata\dyndata_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\70_dyndata\dyndata_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\71_callback\callback_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\71_callback\callback_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\84_capability\capability_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\84_capability\capability_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\82_preflight\preflight_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\82_preflight\preflight_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\86_safety\safety_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\86_safety\safety_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\83_security_audit\secaudit_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\83_security_audit\secaudit_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\81_trust\trust_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\81_trust\trust_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\85_kernel_ext\kernel_ext_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\85_kernel_ext\kernel_ext_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\75_hwid\hwid_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\75_hwid\hwid_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\79_alpc\alpc_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\79_alpc\alpc_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\78_wsl\wsl_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\78_wsl\wsl_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\77_win32k\win32k_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\77_win32k\win32k_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\80_authentication\authentication_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\80_authentication\authentication_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\76_bugcheck\bugcheck_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\76_bugcheck\bugcheck_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\72_wfp\wfp_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\72_wfp\wfp_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\73_mutation\mutation_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\73_mutation\mutation_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\74_redirect\redirect_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\74_redirect\redirect_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\87_actions\actions_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\87_actions\actions_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\11_thread\thread_descriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\modules\11_thread\thread_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Include="MyArkCore.inf">
+      <Filter>Driver Files</Filter>
+    </Inf>
+  </ItemGroup>
+</Project>

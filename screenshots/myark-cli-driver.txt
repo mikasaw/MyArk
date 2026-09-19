@@ -1,0 +1,36 @@
+# myark-cli driver --help
+
+```
+$ uv run myark-cli driver --help
+usage: myark-cli driver [-h] {check,version,modules,capabilities} ...
+
+positional arguments:
+  {check,version,modules,capabilities}
+    check               probe whether the driver is installed
+    version             print MYARK_CORE_VERSION_OUTPUT
+    modules             list registered driver modules
+    capabilities        list driver IOCTL capabilities
+
+options:
+  -h, --help            show this help message and exit
+```
+
+## myark-cli driver check
+
+Static (no driver installed) -- expectation:
+
+```
+$ uv run myark-cli driver check
+win32 error: 0x00000002
+driver not installed (expected device \\.\MyArkCore)
+```
+
+When MyArkCore.sys loaded inside the VM:
+
+```
+$ uv run myark-cli driver check
+[OK] MyArkCore installed
+[OK] symbol link \\.\MyArkCore reachable
+[INFO] version: MYARK_CORE_VERSION_OUTPUT 0x1
+[INFO] build:  Debug x64 on Windows 11 26100.x
+```

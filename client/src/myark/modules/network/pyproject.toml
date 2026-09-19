@@ -1,0 +1,12 @@
+[project]
+name = "myark-network"
+version = "0.1.0"
+description = "MyArk network module -- pure-R3 TCP/UDP enumeration via IP Helper API (S5.2, quadrant ①)"
+requires-python = ">=3.14"
+
+[project.entry-points.myark_modules]
+network = "myark.modules.network:register"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

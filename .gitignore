@@ -1,0 +1,80 @@
+# Build outputs
+/dist/
+# build\ holds the driver-VM debug fleet (tracked, see AGENTS.md 1) plus
+# transient logs and pulled files (ignored).
+/build/*
+!/build/build_driver.bat
+!/build/vm_*.bat
+!/build/guest_env_probe.cmd
+!/build/guest_crash_probe.cmd
+!/build/elevated_deploy.cmd
+!/build/run_verify_guest.cmd
+!/build/export_wdkcert.ps1
+!/build/vm_env_local.bat.example
+/x64/
+/obj/
+/*.sys
+/*.pdb
+/*.exp
+/*.lib
+/*.map
+/*.ilk
+/*.cat
+/*.cer
+/driver/x64/
+/driver/obj/
+/driver/testdrv/x64/
+/driver/testdrv/obj/
+*.pdb
+
+# KMDF/INF intermediates
+/DriverInstall/
+/*.inf.cat
+/driver/.vs/
+
+# MSBuild/VS
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+
+# Python
+/.venv/
+/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# OS junk
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Multica / Hermes planning workspace (local-only)
+/.hermes/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Secrets (defense in depth - never commit)
+/.env
+*.key
+*.pem
+# local fleet credentials (real KDNET key / guest account / VM paths);
+# must come after the !/build/vm_*.bat whitelist above
+/build/vm_env_local.bat
+
+# Local agent workspaces
+/.zcode/
+
+# PyInstaller standalone exe outputs
+/client/build/
+/client/dist/
+client/myark-cli.spec
+client/myark-ui.spec

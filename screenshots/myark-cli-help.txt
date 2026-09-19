@@ -1,0 +1,63 @@
+# myark-cli --help (top-level)
+
+```
+$ uv run myark-cli --help
+usage: myark-cli [-h]
+                 {driver,actions,alpc,authentication,bugcheck,callback,capability,dyndata,file,hello,hwid,kernel_ext,memory,module,mutation,network,preflight,process,redirect,registry,safety,security_audit,thread,trust,wfp,win32k,wsl} ...
+
+MyArk R3 client (console) -- talks to MyArkCore.sys.
+
+positional arguments:
+  {driver,actions,alpc,authentication,bugcheck,callback,capability,dyndata,file,hello,hwid,kernel_ext,memory,module,mutation,network,preflight,process,redirect,registry,safety,security_audit,thread,trust,wfp,win32k,wsl}
+    driver              interact with the MyArkCore driver
+    actions             actions module commands (7 mixed R0+R3 actions;
+                        kill/terminate/inject/dump have R3 fallbacks, set-
+                        token/hide-process/protect-process are R0-only)
+    alpc                alpc module (ALPC port enumeration; stub for S7.3)
+    authentication      authentication module (Authenticode stub; R3
+                        WinVerifyTrust is primary)
+    bugcheck            bugcheck module (last-bugcheck query + framebuffer
+                        render; stub for S7.3)
+    callback            callback module commands (R0 inspection of
+                        Ps/Cm/Ob/Image/Dbg callbacks)
+    capability          capability module commands (R0 driver self-report)
+    dyndata             dyndata module commands (R0 NtQuerySystemInformation-
+                        style)
+    file                file module commands (pure-R3 file info + security
+                        descriptor)
+    hello               hello module commands (mechanism verification)
+    hwid                hwid module (MajorFunction inspection; ENUMERATE_MJ
+                        stub for S7.3)
+    kernel_ext          kernel_ext module (extends DynData with Win11 25H2
+                        info classes)
+    memory              memory module commands (R3 read/write/query; R0-only
+                        translate/scan)
+    module              module enumeration (R3 EnumProcessModules +
+                        GetModuleFileNameExW)
+    mutation            mutation module (EPROCESS Token inspection; stub for
+                        S7.3)
+    network             network module commands (pure-R3 IP Helper API)
+    preflight           preflight module commands (environment health check)
+    process             process module (R3:
+                        enum/threads/detail/terminate/suspend/inject; R0
+                        skipped)
+    redirect            redirect module (IoCallDriver / CmCallback inspection;
+                        stub for S7.3)
+    registry            registry module commands (pure-R3 winreg operations)
+    safety              safety module commands (6-step gate evaluator)
+    security_audit      security-audit module commands (Defender / Secure Boot
+                        / Trusted Boot)
+    thread              thread module commands (enum / detail / actions)
+    trust               trust module commands (PE / catalog signature
+                        verification)
+    wfp                 wfp module (WFP callout enumeration; stub for S7.3)
+    win32k              win32k module (GUI thread + hook enumeration; stub for
+                        S7.3)
+    wsl                 wsl module (WSL silo enumeration; stub for S7.3)
+
+options:
+  -h, --help            show this help message and exit
+```
+
+Total: 27 sub-modules (driver + 26 functional), 575 pytest baseline, all driven
+from this single argparse tree.

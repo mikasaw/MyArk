@@ -1,0 +1,29 @@
+@echo off
+REM Template for build\vm_env_local.bat (LOCAL ONLY, gitignored).
+REM Copy this file to build\vm_env_local.bat and fill in your real values.
+REM Precedence: per-invocation "set MYARK_X=..." > this file > the tracked
+REM placeholders in vm_env_defaults.bat (the if-not-defined guards below
+REM only fill gaps), so you can target another guest without editing it.
+
+REM --- target VM (test guest) -------------------------------------------
+REM Full path to the .vmx of the VM the fleet drives.
+if not defined MYARK_VMX set "MYARK_VMX=C:\Path\To\Your-VM.vmx"
+REM Test directory inside the guest (driver + scripts are pushed here).
+if not defined MYARK_GDIR set "MYARK_GDIR=C:\myark-test"
+REM Guest account used by vmrun (-gu/-gp). Use a dedicated test account.
+if not defined MYARK_GUEST_USER set "MYARK_GUEST_USER=TestUser"
+if not defined MYARK_GUEST_PASS set "MYARK_GUEST_PASS=TestPass"
+REM Liveness probe file, written INSIDE the guest. Some guests only allow
+REM writes under the logged-in user's desktop - point this at that path.
+if not defined MYARK_GPROBE set "MYARK_GPROBE=C:\Users\Public\myark_alive.txt"
+
+REM --- KDNET coordinates (host side of the debug transport) --------------
+REM MYARK_KDKEY is a KDNET 4-part key (bcdedit /dbgsettings net key:...).
+REM Treat it like a credential: it lets any host with this IP freeze the
+REM guest. Generate one with Windbg Preview's "Network kernel debugging".
+if not defined MYARK_KDKEY set "MYARK_KDKEY=1.2.3.4"
+if not defined MYARK_KDHOST set "MYARK_KDHOST=192.0.2.1"
+if not defined MYARK_KDPORT set "MYARK_KDPORT=50000"
+
+REM --- encrypted VMs only -------------------------------------------------
+REM if not defined MYARK_VP set "MYARK_VP=YourVmxEncryptionPassword"
